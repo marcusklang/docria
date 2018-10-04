@@ -71,8 +71,6 @@ public class DocumentStreamWriter {
             packer.addPayload(encoded);
             packer.flush();
 
-            System.out.println("Flushing block!");
-
             currentblockCount = 0;
             currentblock.clear();
         } catch (IOException e) {
@@ -80,18 +78,21 @@ public class DocumentStreamWriter {
         }
     }
 
+    public void write(byte[] msgpackBlob) throws IOException {
+        currentblock.packBinaryHeader(msgpackBlob.length);
+        currentblock.addPayload(msgpackBlob);
+
+        numdocs++;
+
+        currentblockCount++;
+        if(currentblockCount == numDocsPerBlock) {
+            flushblock();
+        }
+    }
+
     public void write(Document doc) {
         try {
-            byte[] data = MsgpackCodec.encode(doc).toByteArray();
-            currentblock.packBinaryHeader(data.length);
-            currentblock.addPayload(data);
-
-            numdocs++;
-
-            currentblockCount++;
-            if(currentblockCount == numDocsPerBlock) {
-                flushblock();
-            }
+            write(MsgpackCodec.encode(doc).toByteArray());
         } catch (IOException e) {
             throw new IOError(e);
         }

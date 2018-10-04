@@ -86,6 +86,20 @@ public class DocumentStreamReader {
      * @return document
      */
     public Document next() {
+        byte[] raw = nextRaw();
+        if(raw == null)
+            return null;
+
+        return MsgpackCodec.decode(raw);
+    }
+
+    /**
+     * Get next document as raw bytes
+     *
+     * <b>Remarks: Not safe for concurrent use.</b>
+     * @return document byte array
+     */
+    public byte[] nextRaw() {
         try {
             if(block == null) {
                 block = readNextBlock();
@@ -99,7 +113,7 @@ public class DocumentStreamReader {
             if(!block.hasNext())
                 block = null;
 
-            return MsgpackCodec.decode(docdata);
+            return docdata;
         } catch (IOException e) {
             throw new IOError(e);
         }

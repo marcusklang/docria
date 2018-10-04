@@ -85,11 +85,11 @@ public class BoundaryWriter extends OutputStream {
 
     @Override
     public void flush() throws IOException {
-        super.flush();
+        outputStream.flush();
     }
 
     @Override
     public void close() throws IOException {
-        super.close();
+        outputStream.close();
     }
 }
