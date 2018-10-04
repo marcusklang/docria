@@ -290,15 +290,16 @@ class MsgpackCodec:
 
 
     @staticmethod
-    def encode(doc, fail_on_extra_fields=True, **kwargs):
+    def encode(doc, **kwargs):
         """
         Encode document using MessagePack encoder
 
         :param doc: the document to encode
-        :param fail_on_extra_fields: verify and fail if fields not in schema are found in nodes.
+        :param kwargs: passed along to Codec.encode and Document.compile
+        :raises SchemaValidationError
         :return: bytes of the document
         """
-        texts, types, types_num_nodes, schema = Codec.encode(doc, fail_on_extra_fields=fail_on_extra_fields)
+        texts, types, types_num_nodes, schema = Codec.encode(doc, **kwargs)
         output = BytesIO()
         typelist = list(types.keys())
 

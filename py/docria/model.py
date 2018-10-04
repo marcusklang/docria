@@ -762,7 +762,13 @@ class Document:
         self.props = doc.props
 
     def compile(self, extra_fields_ok=False, type_validation=True, **kwargs):
-        """Compile the document, validates and assigns compacted ids to nodes"""
+        """Compile the document, validates and assigns compacted ids to nodes
+
+        :param extra_fields_ok: ignores extra fields in node if set to True
+        :param type_validation: do type validation, if set to False and type
+                                is not correct will result in undefined behaviour, possibly corrupt storage.
+        :raises SchemaValidationError
+        """
 
         # Reset offset counters
         for txt in self.texts.values():

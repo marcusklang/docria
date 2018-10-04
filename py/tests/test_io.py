@@ -14,9 +14,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-from docria import Document, DataTypes as T
-from docria.io import DocumentWriter, BoundaryWriter, BoundaryReader, DocumentReader
+from docria.model import Document, DataTypes as T
+from docria.storage import DocumentWriter, BoundaryWriter, BoundaryReader, DocumentReader
 import re
+import os
 
 def test_io():
     # Stupid tokenizer
@@ -48,5 +49,7 @@ def test_io():
         print(doc)
 
         print(doc.layers["token"])
+
+    os.unlink("test.docria")
 
 test_io()

@@ -14,7 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-from docria import Document, Text, DataTypes as T, MsgpackCodec, JsonCodec, SchemaValidationError
+from docria.model import Document, Text, DataTypes as T, SchemaValidationError
+from docria.codec import MsgpackCodec, JsonCodec
 import re
 import base64
 
