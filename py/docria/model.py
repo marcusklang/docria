@@ -72,6 +72,12 @@ class Node(dict):
     def validate(self):
         self.collection.validate(self)
 
+    def __hash__(self):
+        return id(self)
+
+    def __eq__(self, other):
+        return self is other
+
     def __str__(self):
         from docria.printout import Table, get_representation
         tbl = Table(hide_index=True,
@@ -257,6 +263,12 @@ class Text:
             if indx.step is not None and indx.step > 1:
                 raise NotImplementedError("Only step == 1 are supported.")
 
+            if indx.start < 0 or indx.stop < 0:
+                raise NotImplementedError("Negative indexes are not yet implemented.")
+
+            if indx.start > len(self.text) or indx.stop > len(self.text):
+                raise ValueError("Out of bounds: [%d, %d)" % (indx.start, indx.stop))
+
             start_offset = self._offsets.setdefault(indx.start, Offset(indx.start))
             stop_offset = self._offsets.setdefault(indx.stop, Offset(indx.stop))
             return TextSpan(self, start_offset, stop_offset)
@@ -266,6 +278,18 @@ class Text:
             return TextSpan(self, start_offset, stop_offset)
         else:
             raise ValueError("Unsupported input indx: %s" % repr(indx))
+
+
+class ExtData:
+    def __init__(self, type, data):
+        self.type = type
+        self.data = data
+
+    def encode(self):
+        if isinstance(self.data, bytes):
+            return self.data
+        else:
+            return bytes(self.data)
 
 
 class TEnum(Enum):
@@ -280,7 +304,7 @@ class TEnum(Enum):
     NODEREF = 7
     NODEREF_MANY = 8
     SPAN = 9
-
+    EXT = 10
 
 # String conversion of enum.
 DataType2String = {
@@ -292,7 +316,8 @@ DataType2String = {
     TEnum.BINARY: "bin",
     TEnum.NODEREF: "noderef",
     TEnum.NODEREF_MANY: "noderef_array",
-    TEnum.SPAN: "span"
+    TEnum.SPAN: "span",
+    TEnum.EXT: "ext"
 }
 
 DataType2PyType = {
@@ -303,7 +328,8 @@ DataType2PyType = {
     TEnum.STRING: str,
     TEnum.BINARY: bytes,
     TEnum.NODEREF: Node,
-    TEnum.SPAN: TextSpan
+    TEnum.SPAN: TextSpan,
+    TEnum.EXT: ExtData
 }
 
 String2DataType = {v: k for k, v in DataType2String.items()}

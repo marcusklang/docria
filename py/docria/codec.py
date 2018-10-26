@@ -19,6 +19,7 @@ import msgpack
 import json
 import logging
 from io import BytesIO, IOBase
+from typing import List, Dict, Tuple
 
 
 class DataError(Exception):
@@ -46,11 +47,11 @@ class Codec:
         TEnum.BINARY: lambda l, v: l.append(None if v is None else bytes(v)),
         TEnum.NODEREF: lambda l, v: l.append(None if v is None else v._id),
         TEnum.NODEREF_MANY: lambda l, v: l.append(None if v is None or len(v) == 0 else [n._id for n in v]),
-        TEnum.SPAN: codec_encode_span,
+        TEnum.SPAN: codec_encode_span
     }
 
     @staticmethod
-    def encode(doc: "Document", **kwargs):
+    def encode(doc: "Document", doc_encoder, **kwargs):
         doc.compile(**kwargs)
 
         texts = {}
@@ -73,8 +74,13 @@ class Codec:
 
                 propvalues = []
                 encoder = Codec.encoders[fieldtype.typename]
-                for n in v:
-                    encoder(propvalues, node_getter(n, field, None))
+                if fieldtype.typename == TEnum.DOCUMENT:
+                    for n in v:
+                        docv = node_getter(n, field, None)
+                        propvalues.append(None if docv is None else doc_encoder(docv))
+                else:
+                    for n in v:
+                        encoder(propvalues, node_getter(n, field, None))
 
                 propfields[field] = propvalues
 
@@ -89,9 +95,12 @@ class Codec:
 class JsonCodec:
     @staticmethod
     def encode(doc: "Document"):
-        texts, types, types_num_nodes, schema = Codec.encode(doc)
+        return json.dumps(JsonCodec.encode_object(doc))
 
-        return json.dumps({
+    @staticmethod
+    def encode_object(doc: "Document"):
+        texts, types, types_num_nodes, schema = Codec.encode(doc, doc_encoder=JsonCodec.encode_object)
+        return {
             "DM10": {
                 "props": doc.props,
                 "texts": texts,
@@ -99,7 +108,7 @@ class JsonCodec:
                 "types": types,
                 "schema": schema
             }
-        })
+        }
 
     @staticmethod
     def decode(docstr):
@@ -110,6 +119,10 @@ class JsonCodec:
         if "DM10" not in docobj:
             raise DataError("Unsupported document, no supported headers found, fields: %s" % ", ".join(list(docobj.keys())))
 
+        return JsonCodec.decode_object(docobj)
+
+    @staticmethod
+    def decode_object(docobj):
         docobj = docobj["DM10"]
 
         doc = Document()
@@ -180,9 +193,19 @@ class JsonCodec:
 
                     return decoder
 
+                def doc_field(data):
+                    nonlocal nodes
+
+                    for n, v in zip(nodes, data):
+                        if v is not None:
+                            n[col] = JsonCodec.decode_object(data)
+
                 decoder = simple_field
                 if typedef.typename == TEnum.SPAN:
                     decoder = span_field(doc.texts[typedef.options["context"]], text2offsets[typedef.options["context"]])
+
+                if typedef.typename == TEnum.DOCUMENT:
+                    decoder = doc_field
 
                 coldata = docobj["types"][typename][col]
                 decoder(coldata)
@@ -216,6 +239,110 @@ class JsonCodec:
             layer = doc.add_layer(nt)
             layer.unsafe_initialize(all_nodes[typename])
 
+        return doc
+
+
+class MsgpackDocument:
+    def __init__(self, rawdata, ref=None):
+        self.ref = ref
+        if isinstance(rawdata, bytes):
+            rawdata = BytesIO(rawdata)
+        elif isinstance(rawdata, IOBase):
+            pass
+
+        self.rawdata = rawdata
+
+        if rawdata.read(4) != b"DM_1":
+            raise ValueError("Magic bytes is not DM_1")
+
+        self._read_state = 0
+        self._prop = None
+        self._texts = None
+        self._schema = None
+        self._layers = None
+
+    def _parse_state(self, state):
+        if self._read_state < 1 and state > 0:
+            self.rawdata.seek(4)
+
+            unpacker = msgpack.Unpacker(self.rawdata, raw=False)
+            prop_sz = next(unpacker)
+            prop_start = unpacker.tell() + 4
+
+            self._prop = (prop_start, prop_sz)
+
+        if self._read_state < 2 and state > 1:
+            start_pos = self._prop[0] + self._prop[1]
+            self.rawdata.seek(start_pos)
+            unpacker = msgpack.Unpacker(self.rawdata, raw=False)
+
+            types, schema = MsgpackCodec.decode_schema(unpacker)
+            self._schema = types, schema
+
+            texts_len = next(unpacker)
+            texts_start = unpacker.tell()+start_pos
+            self._texts = (texts_start, texts_len)
+
+        if self._read_state < 3 and state > 2:
+            start_pos = self._texts[0] + self._texts[1]
+            self.rawdata.seek(start_pos)
+            unpacker = msgpack.Unpacker(self.rawdata, raw=False)
+
+            layer_mapping = {}
+            for typename in self._schema[0]:
+                layer_len = next(unpacker)
+                layer_start = unpacker.tell() + start_pos
+                layer_mapping[typename] = (layer_start, layer_len)
+                self.rawdata.seek(layer_start+layer_len)
+                unpacker = msgpack.Unpacker(self.rawdata, raw=False)
+                start_pos = layer_start + layer_len
+
+            self._layers = layer_mapping
+
+    def properties(self, *props):
+        self._parse_state(1)
+        self.rawdata.seek(self._prop[0])
+        unpacker = msgpack.Unpacker(self.rawdata, raw=False)
+        return MsgpackCodec.decode_property(unpacker, *props)
+
+    def schema(self):
+        self._parse_state(2)
+        return self._schema[0], self._schema[1]
+
+    def texts(self, *texts):
+        self._parse_state(2)
+        self.rawdata.seek(self._texts[0])
+        unpacker = msgpack.Unpacker(self.rawdata, raw=False)
+        return MsgpackCodec.decode_texts(unpacker, *texts)
+
+    def document(self, *layers, **kwargs):
+        self._parse_state(3)
+        doc = Document()
+
+        # -- Parse properties
+        doc.props = self.properties()
+
+        # -- Parse schema
+        types, schema = self.schema() #MsgpackCodec.decode_schema(unpacker)
+
+        # -- Parse texts
+        texts = self.texts()# MsgpackCodec.decode_texts(unpacker)
+
+        text2offsets = MsgpackCodec.compute_text_offsets(doc, texts)
+
+        # -- Parse layers
+        layer_set = types if len(layers) == 0 else list(layers)
+        all_nodes = {}
+        for typename in layer_set:
+            self.rawdata.seek(self._layers[typename][0])
+            unpacker = msgpack.Unpacker(self.rawdata, raw=False)
+            # datalength = next(unpacker)
+            #unpacker.skip()
+
+            layerschema = schema[typename]
+            all_nodes[typename] = MsgpackCodec.decode_layer(unpacker, doc, typename, text2offsets, layerschema, **kwargs)
+
+        MsgpackCodec.commit_layers(doc, types, schema, all_nodes)
         return doc
 
 
@@ -299,7 +426,7 @@ class MsgpackCodec:
         :raises SchemaValidationError
         :return: bytes of the document
         """
-        texts, types, types_num_nodes, schema = Codec.encode(doc, **kwargs)
+        texts, types, types_num_nodes, schema = Codec.encode(doc, doc_encoder=MsgpackCodec.encode, **kwargs)
         output = BytesIO()
         typelist = list(types.keys())
 
@@ -362,29 +489,27 @@ class MsgpackCodec:
         return output.getvalue()
 
     @staticmethod
-    def decode(data, **kwargs):
-        """
-        Decode message pack encoded document
+    def decode_property(unpacker: msgpack.Unpacker, *props, **kwargs):
+        if len(props) == 0:
+            output = next(unpacker)  # type: dict
+        else:
+            prop_keys = set(props)
+            output = dict()
 
-        :param data: bytes or file-like object
-        :return: Document instance
-        """
-        if isinstance(data, bytes):
-            data = BytesIO(data)
-        elif isinstance(data, IOBase):
-            pass
+            num_entries = unpacker.read_map_header()
+            for i in range(num_entries):
+                k = next(unpacker)
+                if k in prop_keys:
+                    v = next(unpacker)
+                    output[k] = v
+                else:
+                    unpacker.skip()
 
-        unpacker = msgpack.Unpacker(data, raw=False)
-        header = unpacker.read_bytes(4)
+        # TODO: Implement extension handling!
+        return output
 
-        if header != b"DM_1":
-            raise ValueError("Magic bytes is not DM_1")
-
-        prop_sz = next(unpacker)
-
-        doc = Document()
-        doc.props = next(unpacker)
-
+    @staticmethod
+    def decode_schema(unpacker: msgpack.Unpacker):
         types = next(unpacker)
         schema = {}  # type: Dict[str, List[Tuple[str, DataType]]]
 
@@ -411,8 +536,30 @@ class MsgpackCodec:
 
             schema[typename] = fields
 
-        texts_len = next(unpacker)
-        texts = next(unpacker)
+        return types, schema
+
+    @staticmethod
+    def decode_texts(unpacker, *texts):
+        if len(texts) == 0:
+            return next(unpacker)
+        else:
+            texts = {}
+
+            prop_keys = set(texts)
+            num_entries = unpacker.read_map_header()
+            for i in range(num_entries):
+                k = next(unpacker)
+                if k in prop_keys:
+                    v = next(unpacker)
+                    texts[k] = v
+                else:
+                    unpacker.skip()
+
+            return texts
+
+    @staticmethod
+    def compute_text_offsets(doc, texts):
+        """Computes all offsets and inserts text into document"""
 
         text2offsets = {}
         for textname, text in texts.items():
@@ -429,21 +576,38 @@ class MsgpackCodec:
             textobj = doc.add_text(textname, fulltext)
             text2offsets[textname] = textobj.initialize_offsets(offsets)
 
-        all_nodes = {}
+        return text2offsets
 
-        for typename in types:
-            datalength = next(unpacker)
-            num_nodes = next(unpacker)
-            nodes = [Node() for _ in range(num_nodes)]
-            all_nodes[typename] = nodes
+    @staticmethod
+    def decode_layer(unpacker, doc, typename, text2offsets, layerschema, *fields, **kwargs):
+        num_nodes = next(unpacker)
+        nodes = [Node() for _ in range(num_nodes)]
 
-            for col, typedef in schema[typename]:
+        fieldindx = None
+        if len(fields) > 0:
+            fieldindx = set(fields)
+
+        for col, typedef in layerschema:
+            if fieldindx is None or col in fieldindx:
                 def simple_field(data):
                     nonlocal nodes
 
                     for n, v in zip(nodes, data):
                         if v is not None:
                             n[col] = v
+
+                def doc_field(data):
+                    nonlocal nodes
+
+                    for n, v in zip(nodes, data):
+                        if v is not None:
+                            n[col] = MsgpackCodec.decode(v)
+
+                def ext_field(data):
+                    for n, v in zip(nodes, data):
+                        if v is not None:
+                            n[col] = v.data
+
 
                 def span_field(text, offsets):
                     nonlocal nodes
@@ -465,6 +629,12 @@ class MsgpackCodec:
                     decoder = span_field(
                         doc.texts.get(typedef.options["context"], None),
                         text2offsets.get(typedef.options["context"], None))
+                elif typedef.typename == TEnum.EXT:
+                    # TODO: Implement generic extension handling!
+                    if typedef.options["type"] == "doc":
+                        decoder = doc_field
+                    else:
+                        decoder = ext_field
 
                 special_encoding = next(unpacker)
                 if special_encoding:
@@ -472,7 +642,17 @@ class MsgpackCodec:
 
                 coldata = next(unpacker)
                 decoder(coldata)
+            else:
+                special_encoding = next(unpacker)
+                if special_encoding:
+                    raise NotImplementedError("special_encoding")
 
+                unpacker.skip()
+
+        return nodes
+
+    @staticmethod
+    def commit_layers(doc, types, schema, all_nodes):
         # Insert layers
         for typename in types:
 
@@ -502,6 +682,54 @@ class MsgpackCodec:
             layer = doc.add_layer(nt)
             layer.unsafe_initialize(all_nodes[typename])
 
-        return doc
+    @staticmethod
+    def decode(data, **kwargs):
+        """
+        Decode message pack encoded document
 
+        :param data: bytes or file-like object
+        :return: Document instance
+        """
+        if isinstance(data, bytes):
+            data = BytesIO(data)
+        elif isinstance(data, IOBase):
+            pass
+
+        unpacker = msgpack.Unpacker(data, raw=False)
+        header = unpacker.read_bytes(4)
+
+        if header != b"DM_1":
+            raise ValueError("Magic bytes is not DM_1")
+
+        doc = Document()
+
+        # prop_sz = next(unpacker)
+        unpacker.skip()
+
+        # -- Parse properties
+        doc.props = MsgpackCodec.decode_property(unpacker, **kwargs)
+
+        # -- Parse schema
+        types, schema = MsgpackCodec.decode_schema(unpacker)
+
+        # -- Parse texts
+
+        # texts_len = next(unpacker)
+        unpacker.skip()
+
+        texts = MsgpackCodec.decode_texts(unpacker)
+
+        text2offsets = MsgpackCodec.compute_text_offsets(doc, texts)
+
+        # -- Parse layers
+        all_nodes = {}
+        for typename in types:
+            # datalength = next(unpacker)
+            unpacker.skip()
+
+            layerschema = schema[typename]
+            all_nodes[typename] = MsgpackCodec.decode_layer(unpacker, doc, typename, text2offsets, layerschema, **kwargs)
+
+        MsgpackCodec.commit_layers(doc, types, schema, all_nodes)
+        return doc
 
