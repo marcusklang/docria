@@ -59,4 +59,9 @@ public class NullValue extends Value {
     public void visit(ValueVisitor visitor) {
         visitor.accept(this);
     }
+
+    @Override
+    public String toString() {
+        return "Null";
+    }
 }

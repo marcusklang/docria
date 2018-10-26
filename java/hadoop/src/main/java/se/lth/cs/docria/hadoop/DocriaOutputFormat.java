@@ -8,6 +8,7 @@ import org.apache.hadoop.mapreduce.RecordWriter;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import se.lth.cs.docria.io.DocumentStreamBoundaryWriter;
+import se.lth.cs.docria.io.DocumentStreamWriter;
 
 import java.io.IOException;
 
@@ -21,6 +22,6 @@ public class DocriaOutputFormat extends FileOutputFormat<DocumentWritable, NullW
 
         Path file = getDefaultWorkFile(taskAttemptContext, ".docria");
         FileSystem fs = file.getFileSystem(conf);
-        return new DocriaWriter(new DocumentStreamBoundaryWriter(fs.create(file), numDocsPerBlock));
+        return new DocriaWriter(new DocumentStreamWriter(fs.create(file), numDocsPerBlock));
     }
 }

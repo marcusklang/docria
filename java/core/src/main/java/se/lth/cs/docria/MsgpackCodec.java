@@ -118,6 +118,31 @@ public class MsgpackCodec {
             }
         }
 
+        public boolean schemaless = false;
+
+        @Override
+        public void accept(ExtensionValue value) {
+            try {
+                byte[] bytes = value.binaryValue();
+                if(schemaless) {
+                    MessageBufferPacker typePacker = MessagePack.newDefaultBufferPacker();
+                    typePacker.packString("doc");
+                    typePacker.packBinaryHeader(bytes.length);
+                    typePacker.addPayload(bytes);
+                    byte[] data = typePacker.toByteArray();
+
+                    packer.packExtensionTypeHeader((byte) 0, data.length);
+                    packer.addPayload(data);
+                } else {
+                    packer.packBinaryHeader(bytes.length);
+                    packer.addPayload(bytes);
+                }
+            }
+            catch(IOException e) {
+                throw new IOError(e);
+            }
+        }
+
         @Override
         public void accept(Node value) {
             try {
@@ -218,6 +243,7 @@ public class MsgpackCodec {
         propPacker.packMapHeader(props.size());
 
         ValueWriter propWriter = new ValueWriter(propPacker);
+        propWriter.schemaless = true;
         props.forEach((key, value) -> {
             try {
                 propPacker.packString(key);
@@ -416,6 +442,22 @@ public class MsgpackCodec {
                 case BINARY:
                     props.put(key, Values.get(value.asBinaryValue().asByteArray()));
                     break;
+                case EXTENSION:
+                    if(value.asExtensionValue().getType() == 0) {
+                        MessageUnpacker extensionData = MessagePack.newDefaultUnpacker(value.asExtensionValue().getData());
+                        String type = extensionData.unpackString();
+                        switch (type) {
+                            case "doc":
+                                props.put(key, new DocumentValue(extensionData.unpackValue().asBinaryValue().asByteArray()));
+                                break;
+                            default:
+                                props.put(key, new ExtensionValue(type, extensionData.unpackValue().asBinaryValue().asByteArray()));
+                                break;
+                        }
+                    }
+                    else
+                        throw new UnsupportedOperationException(
+                                "Unsupported extension type: " + value.asExtensionValue().getType() + " for property key: " + key);
                 default:
                     throw new UnsupportedOperationException(
                             "Unsupported property type: " + value.getValueType().toString());
@@ -653,6 +695,22 @@ public class MsgpackCodec {
                                                    , contextOffsets.get(stopOffset)));
                         } else {
                             unpacker.unpackNil();
+                        }
+                    }
+                    break;
+                case EXT:
+                    String type = fieldType.args().get("type").stringValue();
+                    if(type.equals("doc")) {
+                        for (int k = 0; k < numNodes; k++) {
+                            if(!unpacker.tryUnpackNil()) {
+                                nodes.get(k).put(field, new DocumentValue(unpacker.unpackValue().asBinaryValue().asByteArray()));
+                            }
+                        }
+                    } else {
+                        for (int k = 0; k < numNodes; k++) {
+                            if(!unpacker.tryUnpackNil()) {
+                                nodes.get(k).put(field, new ExtensionValue(type, unpacker.unpackValue().asBinaryValue().asByteArray()));
+                            }
                         }
                     }
                     break;

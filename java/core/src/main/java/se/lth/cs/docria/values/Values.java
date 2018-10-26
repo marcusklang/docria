@@ -21,6 +21,7 @@ import se.lth.cs.docria.Span;
 import se.lth.cs.docria.Value;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Objects;
 import java.util.TreeMap;
 
@@ -65,6 +66,10 @@ public class Values {
         return value;
     }
 
+    public static Value get(Document value) {
+        return new DocumentValue(value);
+    }
+
     public static Value get(Object value) {
         if(value == null) {
             return NullValue.INSTANCE;
@@ -94,7 +99,10 @@ public class Values {
             return get(((Boolean) value).booleanValue());
         } else if(value instanceof Node[]) {
             return get((Node[])value);
-        } else {
+        } else if(value instanceof List && !((List) value).isEmpty() && ((List) value).get(0) instanceof Node) {
+            return new NodeArrayValue((List<Node>)value);
+        }
+        else {
             throw new UnsupportedOperationException("Unsupported value: " + Objects.toString(value));
         }
     }

@@ -35,7 +35,7 @@ public class DocriaInputFormat extends FileInputFormat<DocumentWritable, NullWri
                 Path path = fileSplit.getPath();
                 FileSystem fs = path.getFileSystem(conf);
                 fsInput = fs.open(path);
-                streamReader = new DocumentStreamReader(new BoundaryReader(fsInput));
+                streamReader = new DocumentStreamReader(fsInput);
             }
 
             @Override

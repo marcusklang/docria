@@ -97,7 +97,9 @@ public class Node extends Value {
         }
 
         public Node insert() {
-            instance.setData(values);
+            if(!values.isEmpty())
+                instance.setData(values);
+
             layer.add(instance);
             return instance;
         }

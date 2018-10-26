@@ -50,6 +50,14 @@ public interface ValueVisitor {
         this.accept((Value)value);
     }
 
+    public default void accept(ExtensionValue value) {
+        this.accept((Value)value);
+    }
+
+    public default void accept(DocumentValue value) {
+        this.accept((ExtensionValue) value);
+    }
+
     public default void accept(Span value) {
         this.accept((Value)value);
     }

@@ -16,6 +16,7 @@
 package se.lth.cs.docria;
 
 import it.unimi.dsi.fastutil.ints.*;
+import se.lth.cs.docria.exceptions.SpanException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,12 +25,27 @@ import java.util.stream.IntStream;
 
 public class Text implements CharSequence {
     private final String name;
-    private final String text;
     private final Int2ObjectOpenHashMap<Offset> pos2Offset = new Int2ObjectOpenHashMap<>();
     private final DataType spantype;
+    private String text;
+    private boolean validating=true;
+
+    public boolean isValidating() {
+        return validating;
+    }
+
+    public void setValidating(boolean validating) {
+        this.validating = validating;
+    }
 
     public DataType spanType() {
         return spantype;
+    }
+
+    public Text(String name) {
+        this.name = name;
+        this.text = "";
+        this.spantype = DataTypes.span(this.name);
     }
 
     public Text(String name, String text) {
@@ -55,6 +71,10 @@ public class Text implements CharSequence {
      */
     protected void reset() {
         pos2Offset.values().forEach(offset -> offset.refcount = 0);
+    }
+
+    public void setText(String text) {
+        this.text = text;
     }
 
     /**
@@ -88,6 +108,11 @@ public class Text implements CharSequence {
 
         List<String> positions = new ArrayList<>();
 
+        if(sortedSet.size() == 1) {
+            //Occurs when string is of length 0
+            positions.add("");
+        }
+        else
         {
             IntBidirectionalIterator iter = sortedSet.iterator();
 
@@ -110,6 +135,14 @@ public class Text implements CharSequence {
     }
 
     public Span span(int startOffset, int stopOffset) {
+        if(validating && !(
+                (startOffset >= 0 && startOffset < text.length())
+             && (stopOffset >= 0 && stopOffset <= text.length())
+             && (stopOffset >= startOffset)
+        )) {
+            throw new SpanException(String.format("Span with start=%d, stop=%d is not acceptable. Text length=%d", startOffset, stopOffset, text.length()));
+        }
+
         Offset start, stop;
         if(pos2Offset.containsKey(startOffset)) {
             start = pos2Offset.get(startOffset);

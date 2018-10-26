@@ -23,7 +23,20 @@ public class DataTypes {
     public static final DataType FLOAT_64 = new DataType.Builder(DataTypeName.DOUBLE).build();
     public static final DataType STRING = new DataType.Builder(DataTypeName.STRING).build();
     public static final DataType BINARY = new DataType.Builder(DataTypeName.BINARY).build();
+
+    public static DataType noderef(String layer) {
+        return new DataType.Builder(DataTypeName.NODE).addArg("layer", layer).build();
+    }
+
+    public static DataType noderef_array(String layer) {
+        return new DataType.Builder(DataTypeName.NODE_ARRAY).addArg("layer", layer).build();
+    }
+
     public static DataType span(String context) {
         return new DataType.Builder(DataTypeName.SPAN).addArg("context", context).build();
+    }
+
+    public static DataType ext(String type) {
+        return new DataType.Builder(DataTypeName.EXT).addArg("type", type).build();
     }
 }

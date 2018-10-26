@@ -19,6 +19,8 @@ import se.lth.cs.docria.DataType;
 import se.lth.cs.docria.DataTypes;
 import se.lth.cs.docria.Value;
 
+import java.util.Objects;
+
 public class IntValue extends Value {
     private final int value;
 
@@ -59,5 +61,25 @@ public class IntValue extends Value {
     @Override
     public void visit(ValueVisitor visitor) {
         visitor.accept(this);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o)
+            return true;
+        if (o == null || getClass() != o.getClass())
+            return false;
+        IntValue intValue = (IntValue) o;
+        return value == intValue.value;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(value);
+    }
+
+    @Override
+    public String toString() {
+        return "I32[" + value + "]";
     }
 }

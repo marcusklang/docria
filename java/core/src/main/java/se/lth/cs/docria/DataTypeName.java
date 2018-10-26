@@ -26,6 +26,7 @@ public enum DataTypeName {
     STRING("str"),
     BINARY("bin"),
     SPAN("span"),
+    EXT("ext"),
     NODE("noderef"),
     NODE_ARRAY("noderef_array");
 

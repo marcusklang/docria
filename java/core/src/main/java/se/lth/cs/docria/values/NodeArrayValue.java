@@ -73,4 +73,9 @@ public class NodeArrayValue extends Value {
     public void visit(ValueVisitor visitor) {
         visitor.accept(this);
     }
+
+    @Override
+    public String toString() {
+        return "NodeList[N=" + nodes.length + "]";
+    }
 }

@@ -32,8 +32,8 @@ public class Schema {
         public Layer(String name, TreeMap<String, DataType> fields, NodeFactory factory) {
             this.name = name;
             this.fields = fields;
-            this.typeNoderef = new DataType.Builder(DataTypeName.NODE).addArg("layer", name).build();
-            this.typeNoderefArray = new DataType.Builder(DataTypeName.NODE_ARRAY).addArg("layer", name).build();
+            this.typeNoderef = DataTypes.noderef(name);
+            this.typeNoderefArray = DataTypes.noderef_array(name);
             this.factory = factory;
         }
 

@@ -19,6 +19,7 @@ import se.lth.cs.docria.DataType;
 import se.lth.cs.docria.DataTypes;
 import se.lth.cs.docria.Value;
 
+import java.util.Arrays;
 import java.util.Base64;
 
 public class BinaryValue extends Value {
@@ -45,5 +46,25 @@ public class BinaryValue extends Value {
     @Override
     public void visit(ValueVisitor visitor) {
         visitor.accept(this);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o)
+            return true;
+        if (o == null || getClass() != o.getClass())
+            return false;
+        BinaryValue that = (BinaryValue) o;
+        return Arrays.equals(value, that.value);
+    }
+
+    @Override
+    public int hashCode() {
+        return Arrays.hashCode(value);
+    }
+
+    @Override
+    public String toString() {
+        return "Binary[len=" + value.length + "]";
     }
 }
