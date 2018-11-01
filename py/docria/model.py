@@ -291,6 +291,9 @@ class ExtData:
         else:
             return bytes(self.data)
 
+    def decode(self):
+        return self.data
+
 
 class TEnum(Enum):
     """Type names"""
@@ -384,6 +387,10 @@ class DataTypes:
     @staticmethod
     def noderef_many(layer):
         return DataType(TEnum.NODEREF_MANY, layer=layer)
+
+    @staticmethod
+    def ext(typename):
+        return DataType(TEnum.EXT, type=typename)
 
     @staticmethod
     def matches(o, expected):

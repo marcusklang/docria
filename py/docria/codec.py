@@ -14,12 +14,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-from docria.model import TextSpan, Document, TEnum, NodeLayerSchema, String2DataType, DataType, Node
+from docria.model import TextSpan, Document, TEnum, NodeLayerSchema, String2DataType, DataType, Node, ExtData
 import msgpack
 import json
 import logging
 from io import BytesIO, IOBase
 from typing import List, Dict, Tuple
+from base64 import standard_b64decode
 
 
 class DataError(Exception):
@@ -74,10 +75,20 @@ class Codec:
 
                 propvalues = []
                 encoder = Codec.encoders[fieldtype.typename]
-                if fieldtype.typename == TEnum.DOCUMENT:
+                if fieldtype.typename == TEnum.EXT:
                     for n in v:
-                        docv = node_getter(n, field, None)
-                        propvalues.append(None if docv is None else doc_encoder(docv))
+                        extv = node_getter(n, field, None)
+                        if extv is not None:
+                            if isinstance(extv, bytes):
+                                propvalues.append(extv)
+                            elif isinstance(extv, ExtData):
+                                propvalues.append(extv.encode())
+                            else:
+                                raise ValueError("Incorrect value.")
+                        else:
+                            propvalues.append(None)
+
+                        propvalues.append(None if extv is None else extv.encode())
                 else:
                     for n in v:
                         encoder(propvalues, node_getter(n, field, None))
@@ -193,19 +204,25 @@ class JsonCodec:
 
                     return decoder
 
-                def doc_field(data):
+                def ext_field(data):
                     nonlocal nodes
+
+                    typename = typedef.options["type"]
+                    if typename == "doc":
+                        extdata = MsgpackDocumentExt
+                    else:
+                        extdata = lambda v: ExtData(typename, v)
 
                     for n, v in zip(nodes, data):
                         if v is not None:
-                            n[col] = JsonCodec.decode_object(data)
+                            n[col] = typename(standard_b64decode(data))
 
                 decoder = simple_field
                 if typedef.typename == TEnum.SPAN:
                     decoder = span_field(doc.texts[typedef.options["context"]], text2offsets[typedef.options["context"]])
 
-                if typedef.typename == TEnum.DOCUMENT:
-                    decoder = doc_field
+                if typedef.typename == TEnum.EXT:
+                    decoder = ext_field
 
                 coldata = docobj["types"][typename][col]
                 decoder(coldata)
@@ -346,6 +363,24 @@ class MsgpackDocument:
         return doc
 
 
+class MsgpackDocumentExt(ExtData):
+    def __init__(self, doc):
+        super().__init__("doc", doc)
+
+    def encode(self):
+        if isinstance(self.data, bytes):
+            return self.data
+        else:
+            return MsgpackCodec.encode(self.data)
+
+    def decode(self):
+        if isinstance(self.data, Document):
+            return self.data
+        else:
+            self.data = MsgpackCodec.decode(self.data)
+            return self.data
+
+
 class MsgpackCodec:
     @staticmethod
     def debug(data):
@@ -434,6 +469,8 @@ class MsgpackCodec:
 
         # 1. Write Document properties
         out_props = BytesIO()
+
+        # TODO: Implement extension handling!
         msgpack.pack(doc.props, out_props)
 
         msgpack.pack(out_props.tell(), output)
@@ -481,6 +518,7 @@ class MsgpackCodec:
             for col in types2columns[typename]:
                 msgpack.pack(False, out_type)  # Future support for specialized encoding
                 msgpack.pack(types[typename][col], out_type, use_bin_type=True)
+                # TODO: Implement extension handling!
 
             msgpack.pack(out_type.tell(), out_types)
             out_types.write(out_type.getbuffer()[0:out_type.tell()])
@@ -604,10 +642,15 @@ class MsgpackCodec:
                             n[col] = MsgpackCodec.decode(v)
 
                 def ext_field(data):
+                    types = typedef.options["type"]
+                    if types == "doc":
+                        extdata = MsgpackDocumentExt
+                    else:
+                        extdata = lambda v: ExtData(types, v)
+
                     for n, v in zip(nodes, data):
                         if v is not None:
-                            n[col] = v.data
-
+                            n[col] = extdata(v.data)
 
                 def span_field(text, offsets):
                     nonlocal nodes
@@ -630,7 +673,6 @@ class MsgpackCodec:
                         doc.texts.get(typedef.options["context"], None),
                         text2offsets.get(typedef.options["context"], None))
                 elif typedef.typename == TEnum.EXT:
-                    # TODO: Implement generic extension handling!
                     if typedef.options["type"] == "doc":
                         decoder = doc_field
                     else:
