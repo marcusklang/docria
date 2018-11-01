@@ -597,18 +597,18 @@ class NodeLayerCollection:
             if len(item) == 0:
                 return []
             elif isinstance(item[0], int):
-                return [self._nodes[n] for n in item]
+                return NodeList(self._nodes[n] for n in item)
             else:
                 raise ValueError("Unsupported indexing type: %s" % repr(type(item)))
         elif isinstance(item, slice):
-            return [n for n in self._nodes[item] if n is not None]
+            return NodeList(n for n in self._nodes[item] if n is not None)
         else:
             try:
                 output = []
                 for n in iter(item):
                     output.append(self[n])
 
-                return output
+                return NodeList(output)
             except TypeError:
                 pass
 
@@ -697,7 +697,9 @@ class Document:
         :param kwargs: property key, values
         """
         self.layers = {}  # type: Dict[str, NodeLayerCollection]
+        self.layer = self.layers
         self.texts = {}  # type: Dict[str, Text]
+        self.text = self.texts
         self.props = dict(kwargs)  # type: Dict[str, Any]
 
     def add_text(self, name, text):
@@ -786,6 +788,9 @@ class Document:
         self.layers = doc.layers
         self.texts = doc.texts
         self.props = doc.props
+
+    def __getitem__(self, key):
+        return self.layers[key]
 
     def compile(self, extra_fields_ok=False, type_validation=True, **kwargs):
         """Compile the document, validates and assigns compacted ids to nodes

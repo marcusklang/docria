@@ -17,11 +17,16 @@
 import os
 from io import BytesIO, RawIOBase, SEEK_SET, SEEK_CUR, SEEK_END
 from msgpack import Unpacker, Packer
-from typing import Optional, Callable
+from typing import Optional, Callable, Dict
 import zlib
 from typing import Iterator
 import struct
 from docria.model import Document
+import importlib
+
+
+def _module_available(name):
+    return importlib.util.find_spec(name) is not None
 
 
 class BoundaryReader(RawIOBase):
@@ -428,32 +433,32 @@ class DocumentFileIndex:
         from docria.codec import MsgpackCodec
 
         if len(results) > 0:
-                reader = DocumentIO.read(self.filepath)
-                lastblk = None
-                for docid in sorted(results):
-                    ref = self.docs[docid]
-                    try:
-                        if lastblk is None:
-                            reader.seek(ref[0])
-                            lastblk = reader.readblock()
-                        elif lastblk.position != ref[0]:
-                            reader.seek(ref[0])
-                            lastblk = reader.readblock()
+            reader = DocumentIO.read(self.filepath)
+            lastblk = None
+            for docid in sorted(results):
+                ref = self.docs[docid]
+                try:
+                    if lastblk is None:
+                        reader.seek(ref[0])
+                        lastblk = reader.readblock()
+                    elif lastblk.position != ref[0]:
+                        reader.seek(ref[0])
+                        lastblk = reader.readblock()
 
-                        lastblk.seek(ref[1])
-                        if lazy:
-                            yield next(lastblk)
-                        else:
-                            yield MsgpackCodec.decode(next(lastblk._unpacker))
-                    except Exception as e:
-                        raise IOError("Failed to read document in %s for ref %d, %d" % (self.filepath, ref[0], ref[1]))
+                    lastblk.seek(ref[1])
+                    if lazy:
+                        yield next(lastblk)
+                    else:
+                        yield MsgpackCodec.decode(next(lastblk._unpacker))
+                except Exception as e:
+                    raise IOError("Failed to read document in %s for ref %d, %d" % (self.filepath, ref[0], ref[1]))
 
 
 class DocumentIndex:
     """Simple In-Memory Index for debugging"""
     def __init__(self, basepath="."):
         self.basepath = os.path.abspath(basepath)
-        self.index = {} # type: Dict[str, DocumentFileIndex]
+        self.index = {}  # type: Dict[str, DocumentFileIndex]
 
     def add(self, index: "DocumentFileIndex"):
         index.filepath = os.path.relpath(index.filepath, self.basepath)
@@ -470,7 +475,41 @@ class DocumentIndex:
             pickle.dump(self, fout, pickle.HIGHEST_PROTOCOL)
 
     @staticmethod
-    def load(self, path):
+    def load(path):
         import pickle
         with open(path, "rb") as fin:
             return pickle.load(fin)
+
+
+def _build_file_index(args):
+    path = args["path"]
+    props = args["props"]
+    return DocumentFileIndex.build(path, *props)
+
+
+def build_file_index(path, *props):
+    return DocumentFileIndex.build(path, *props)
+
+
+def build_directory_index(path, *props, basepath="."):
+    from multiprocessing import Pool
+
+    docria_files = [os.path.join(path, fpath) for fpath in os.listdir(path) if not fpath.startswith(".") and fpath.lower().endswith(".docria")]
+    master_indx = DocumentIndex(basepath=basepath)
+
+    proplist = list(props)
+
+    with Pool() as p:
+        if _module_available("tqdm"):
+            from tqdm import tqdm
+
+            with tqdm("Building index", total=len(docria_files)) as pbar:
+                for indxitem in p.imap_unordered(_build_file_index, [{"path": path, "props": proplist} for path in docria_files]):
+                    master_indx.add(indxitem)
+                    pbar.update(1)
+
+        else:
+            for indxitem in p.imap_unordered(_build_file_index, [{"path": path, "props": proplist} for path in docria_files]):
+                master_indx.add(indxitem)
+
+    return master_indx
