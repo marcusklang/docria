@@ -9,14 +9,18 @@ with open('README.rst') as f:
 with open('LICENSE') as f:
     license = f.read()
 
+with open('requirements.txt') as f:
+    required = f.read().splitlines()
+
 setup(
     name='docria',
-    version='0.1.0',
+    version='0.1.1',
     description='Semi-structured Document Model',
     long_description=readme,
     long_description_content_type="text/x-rst",
     author='Marcus Klang',
     author_email='marcus.klang@cs.lth.se',
+    install_requires=required,
     url='https://github.com/marcusklang/docria',
     project_urls={
         'Source': 'https://github.com/marcusklang/docria',
