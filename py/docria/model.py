@@ -497,6 +497,7 @@ class NodeLayerCollection:
                 del n[name]
 
         del self._schema.fields[name]
+        return True
 
     def unsafe_initialize(self, nodes: List[Node]):
         """Directly replaces all nodes with the provided list, no checks for performance.
