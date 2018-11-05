@@ -21,7 +21,8 @@ The document model consists of the following concepts:
 
 All parts of the document are accessible in three properties:
 
-.. code-block python
+.. code-block:: python
+
     from docria.model import Document
 
     doc = Document()
@@ -33,7 +34,8 @@ All parts of the document are accessible in three properties:
 Example of usage
 ----------------
 
-.. code-block python
+.. code-block:: python
+
     :name How to create a document and insert nodes
 
     from docria.model import Document, DataTypes as T
