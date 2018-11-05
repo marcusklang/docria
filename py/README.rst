@@ -92,7 +92,8 @@ Document I/O
 
 In ``docria.storage`` there is a DocumentIO class which provides factory methods to create readers and writers.
 
-.. code-block python
+.. code-block:: python
+
     :name How to create file writer and reader
 
     from docria.storage import DocumentIO
@@ -106,6 +107,22 @@ In ``docria.storage`` there is a DocumentIO class which provides factory methods
         for doc in docria_reader:
             # Do something with doc, which is a document
             pass
+
+Raw reading and writing of documents:
+
+.. code-block:: python
+
+    :name Using the Msgpack Codec
+
+    from docria.codec import MsgpackCodec
+
+    binarydata = bytes()  # from any location
+
+    # To decode into a document
+    doc = MsgpackCodec.decode(binarydata)
+
+    # To encode into a document
+    binarydata = MsgpackCodec.encode(doc)
 
 Notes
 -----
