@@ -4,6 +4,7 @@ import org.apache.hadoop.io.Text;
 import org.apache.hadoop.io.Writable;
 import se.lth.cs.docria.Document;
 import se.lth.cs.docria.MsgpackCodec;
+import se.lth.cs.docria.MsgpackDocument;
 
 import java.io.*;
 
@@ -28,6 +29,10 @@ public class DocumentWritable implements Writable, Externalizable {
             document = MsgpackCodec.decode(msgpackBlob);
 
         return document;
+    }
+
+    public MsgpackDocument getMsgpackDocument() {
+        return new MsgpackDocument(getMsgpackBlob());
     }
 
     public void setDocument(Document document) {

@@ -74,6 +74,30 @@ public class Layer extends AbstractCollection<Node> {
         return storage.get(id);
     }
 
+    public Layer addField(String name, DataType type) {
+        if(schema.fields().containsKey(name))
+            throw new IllegalArgumentException("Layer " + name() + " already contains field: " + name);
+
+        schema.add(name, type);
+        return this;
+    }
+
+    public Layer removeField(String name) {
+        if(!schema.fields().containsKey(name)) {
+            return this;
+        }
+
+        schema.remove(name);
+
+        for (Node node : this) {
+            if(node.has(name)) {
+                node.remove(name);
+            }
+        }
+
+        return this;
+    }
+
     @Override
     public boolean add(Node node) {
         // TODO: In case of specific node factory, convert/verify incoming type
@@ -138,6 +162,10 @@ public class Layer extends AbstractCollection<Node> {
                 node.id = i;
                 storage.set(i++, node);
             }
+        }
+
+        for(int k = size; k < storage.size(); k++) {
+            storage.set(k, null);
         }
     }
 

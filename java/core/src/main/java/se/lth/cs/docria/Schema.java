@@ -57,6 +57,17 @@ public class Schema {
             return Collections.unmodifiableMap(fields);
         }
 
+        public void add(String name, DataType type) {
+            if(fields.containsKey(name))
+                throw new IllegalArgumentException("name");
+
+            fields.put(name, type);
+        }
+
+        public void remove(String name) {
+            fields.remove(name);
+        }
+
         public DataType getFieldType(String field) {
             return fields.get(field);
         }

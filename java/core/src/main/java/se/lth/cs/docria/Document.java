@@ -15,7 +15,10 @@
 
 package se.lth.cs.docria;
 
+import se.lth.cs.docria.exceptions.DataInconsistencyException;
+
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class Document {
@@ -75,6 +78,150 @@ public class Document {
         return layer;
     }
 
+    /**
+     * Remove text, will fail if any layer is referring to this text.
+     * @param text the text to remove, (null is a no-op)
+     * @return this document instance
+     */
+    public Document remove(Text text) {
+        return remove(text, false);
+    }
+
+    /**
+     * Remove text
+     * @param text         text to remove, (null is a no-op)
+     * @param fieldcascade remove fields in layers referring to this text, cascading removal
+     * @return this
+     */
+    public Document remove(Text text, boolean fieldcascade) {
+        if(text == null)
+            return this;
+
+        //1. Verify no layer contains fields referencing this text.
+        List<Layer> layersWithReferentFields =
+                layers.values()
+                      .stream()
+                      .filter(l -> l.schema()
+                                    .fields()
+                                    .values()
+                                    .stream()
+                                    .anyMatch(dt -> dt.name() == DataTypeName.SPAN && dt.args().get("context").stringValue().equals(text.name()))
+                      ).collect(Collectors.toList());
+
+        if(!fieldcascade && !layersWithReferentFields.isEmpty()) {
+            String context = layersWithReferentFields.stream()
+                                                     .map(l -> l.name()
+                                                             + "("
+                                                             + l.schema()
+                                                                .fields()
+                                                                .entrySet()
+                                                                .stream()
+                                                                .filter(e -> e.getValue().name() == DataTypeName.SPAN
+                                                                        && e.getValue().args()
+                                                                            .get("context").stringValue()
+                                                                            .equals(text.name()))
+                                                                .map(Map.Entry::getKey)
+                                                                .collect(Collectors.joining(", "))
+                                                             + ")")
+                                                     .collect(Collectors.joining(", "));
+
+            throw new DataInconsistencyException(String.format("Removing text: %s results in data inconsistency, " +
+                                                         "because layers+fields { %s } are referring to this text, " +
+                                                         "remove these fields before removing text.", text.name(), context));
+        }
+        else if(fieldcascade) {
+            for (Layer layersWithReferentField : layersWithReferentFields) {
+                List<String> fields =
+                        layersWithReferentField.schema()
+                                               .fields()
+                                               .entrySet()
+                                               .stream()
+                                               .filter(e -> e.getValue().name() == DataTypeName.SPAN && e.getValue().args().get("context").stringValue().equals(text.name()))
+                                               .map(Map.Entry::getKey)
+                                               .collect(Collectors.toList());
+
+                fields.forEach(layersWithReferentField::removeField);
+            }
+        }
+
+        return this;
+    }
+
+    /**
+     * Remove layer, will fail if any layer is referring to the layer to be removed.
+     * @param layer the layer to remove (null is a no-op)
+     * @return this document instance
+     */
+    public Document remove(Layer layer) {
+        return remove(layer, false);
+    }
+
+    /**
+     * Remove layer
+     * @param layer the layer to remove (null is a no-op)
+     * @param fieldcascade remove referring fields from other layers, default: false
+     *                     which will cast exception if any field of any layer is referring.
+     * @return this document instance
+     */
+    public Document remove(Layer layer, boolean fieldcascade) {
+        if(layer == null)
+            return this;
+
+        //1. Verify no layer contains fields referencing this text.
+        List<Layer> layersWithReferentFields =
+                layers.values()
+                      .stream()
+                      .filter(l -> l.schema()
+                                    .fields()
+                                    .values()
+                                    .stream()
+                                    .anyMatch(dt -> dt.name() == DataTypeName.SPAN && dt.args().get("layer").stringValue().equals(layer.name()))
+                      ).collect(Collectors.toList());
+
+        if(!fieldcascade && !layersWithReferentFields.isEmpty()) {
+            String context = layersWithReferentFields.stream()
+                                                     .map(l -> l.name()
+                                                             + "("
+                                                             + l.schema()
+                                                                .fields()
+                                                                .entrySet()
+                                                                .stream()
+                                                                .filter(e -> (e.getValue().name() == DataTypeName.NODE
+                                                                        || e.getValue().name() == DataTypeName.NODE_ARRAY)
+                                                                        && e.getValue().args()
+                                                                            .get("layer").stringValue()
+                                                                            .equals(layer.name()))
+                                                                .map(Map.Entry::getKey)
+                                                                .collect(Collectors.joining(", "))
+                                                             + ")")
+                                                     .collect(Collectors.joining(", "));
+
+            throw new DataInconsistencyException(String.format("Removing layer: %s results in data inconsistency, " +
+                                                                       "because layers+fields { %s } are referring to this layer, " +
+                                                                       "remove these fields before removing text.", layer.name(), context));
+        }
+        else if(fieldcascade) {
+            for (Layer layersWithReferentField : layersWithReferentFields) {
+                List<String> fields =
+                        layersWithReferentField.schema()
+                                               .fields()
+                                               .entrySet()
+                                               .stream()
+                                               .filter(e -> (e.getValue().name() == DataTypeName.NODE
+                                                       || e.getValue().name() == DataTypeName.NODE_ARRAY)
+                                                       && e.getValue().args()
+                                                           .get("layer").stringValue()
+                                                           .equals(layer.name()))
+                                               .map(Map.Entry::getKey)
+                                               .collect(Collectors.toList());
+
+                fields.forEach(layersWithReferentField::removeField);
+            }
+        }
+
+        return this;
+    }
+
     public Schema.LayerBuilder layerBuilder(String name) {
         return Schema.layer(name);
     }
@@ -104,7 +251,7 @@ public class Document {
     }
 
     /**
-     * Compacts all layers and offsets in texts, used to prepare for serialization
+     * For internal use: Compacts all layers and offsets in texts, used to prepare for serialization.
      */
     public Compiled compile() {
         layerStream().forEach(Layer::compact);

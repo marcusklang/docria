@@ -412,7 +412,7 @@ public class MsgpackCodec {
         return decode(unpacker, nodeFactories);
     }
 
-    private static Map<String,Value> decodeProperties(MessageUnpacker unpacker) throws IOException {
+    protected static Map<String,Value> decodeProperties(MessageUnpacker unpacker) throws IOException {
         int compartmentSize = unpacker.unpackInt();
 
         TreeMap<String, Value> props = new TreeMap<>();
@@ -467,7 +467,7 @@ public class MsgpackCodec {
         return props;
     }
 
-    private static Schema decodeSchema(
+    protected static Schema decodeSchema(
             MessageUnpacker unpacker,
             Map<String,NodeFactory> nodeFactories,
             List<String> types,
@@ -567,7 +567,7 @@ public class MsgpackCodec {
         return schema;
     }
 
-    private static Map<String, List<Offset>> decodeTexts(Document doc, MessageUnpacker unpacker) throws IOException {
+    protected static Map<String, List<Offset>> decodeTexts(Document doc, MessageUnpacker unpacker) throws IOException {
         TreeMap<String,List<Offset>> text2offsets = new TreeMap<>();
         int sz = unpacker.unpackInt();
 
@@ -617,7 +617,7 @@ public class MsgpackCodec {
         }
     }
 
-    private static void decodeLayer(Document document, Layer layer, List<String> fields, Map<String, List<Offset>> offsets, MessageUnpacker unpacker) throws IOException {
+    protected static void decodeLayer(Document document, Layer layer, List<String> fields, Map<String, List<Offset>> offsets, MessageUnpacker unpacker) throws IOException {
         int layer_sz = unpacker.unpackInt();
         int numNodes = unpacker.unpackInt();
 
@@ -733,13 +733,14 @@ public class MsgpackCodec {
                             nodes.get(k).put(field, new NodeArrayPlaceholder(nodeIds));
                         }
                     }
+                    break;
                 default:
                     throw new UnsupportedOperationException("Field type not yet implemented: " + fieldType.name().getName());
             }
         }
     }
 
-    private static void resolveReferences(Document document, Layer layer) {
+    protected static void resolveReferences(Document document, Layer layer) {
         Schema.Layer schema = layer.schema();
         for (Map.Entry<String, DataType> entry : schema.fields().entrySet()) {
             String field = entry.getKey();
