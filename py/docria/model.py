@@ -482,6 +482,22 @@ class NodeLayerCollection:
     def name(self):
         return self.schema.name
 
+    def add_field(self, name: str, type: "DataType"):
+        if name in self._schema.fields:
+            raise SchemaValidationError("Cannot add field %s, it already exists!" % name)
+
+        self._schema.add(name, type)
+
+    def remove_field(self, name: str)->bool:
+        if name not in self._schema:
+            return False
+
+        for n in self:
+            if name in n:
+                del n[name]
+
+        del self._schema.fields[name]
+
     def unsafe_initialize(self, nodes: List[Node]):
         """Directly replaces all nodes with the provided list, no checks for performance.
 
@@ -542,6 +558,8 @@ class NodeLayerCollection:
     def sort(self, keyfn):
         self.compact()
         self._nodes.sort(key=keyfn)
+        for i, n in zip(range(len(self)),self):
+            n._id = i
 
     def remove(self, node: "Node"):
         if node.collection is not self:
@@ -550,7 +568,7 @@ class NodeLayerCollection:
         self._nodes[node._id] = None
         self.num -= 1
 
-        if 0.75*len(self._nodes) > self.num:
+        if 0.75*len(self._nodes) > self.num and len(self._nodes) > 16:
             self.compact()
         
         node.collection = None
@@ -739,6 +757,35 @@ class Document:
         self.layers[typedef.name] = typecol
         return typecol
 
+    def remove_layer(self, name, fieldcascade=False)->bool:
+        """
+        Remove layer from document if it exists.
+
+        :param name: name of layer
+        :param fieldcascade: force removal, and cascade removal of referring fields in other layers,
+                             default: false which will result in exception if any layer is referring to name
+        :return: True if layer was removed, False if it does not exist
+        """
+        if name not in self.layers:
+            return False
+
+        referencing_layer_field = {}
+        for k, v in self.layers.items():
+            if k != name:
+                for fk, fv in v.schema.fields.items():
+                    if fv.typename == TEnum.NODEREF or fv.typename == TEnum.NODEREF_MANY:
+                        if fv.options["layer"] == name:
+                            referencing_layer_field.setdefault(k, []).append(fk)
+
+        if not fieldcascade and len(referencing_layer_field) > 0:
+            layer_field_names = ", ".join(
+                map(lambda tup: "%s(%s)" % (tup[0], ", ".join(tup[1]))
+                    , referencing_layer_field.items())
+            )
+
+            raise SchemaValidationError("Attempting to remove layer %s, but is referenced from layer(s)+field(s): %s"
+                                        % (name, layer_field_names))
+
     def __repr__(self):
         return "Document(%d layers, %d texts%s)" % (
             len(self.layers),
@@ -800,7 +847,7 @@ class Document:
         return self.layers[key]
 
     def compile(self, extra_fields_ok=False, type_validation=True, **kwargs):
-        """Compile the document, validates and assigns compacted ids to nodes
+        """Compile the document, validates and assigns compacted ids to nodes (internal use)
 
         :param extra_fields_ok: ignores extra fields in node if set to True
         :param type_validation: do type validation, if set to False and type

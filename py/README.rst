@@ -11,11 +11,11 @@ Overview
 The document model consists of the following concepts:
 
  * **Document**: The overall container for everything (all nodes, layers, texts must be contained within)
- * **Document properties**: a single dictionary per document to store metadata in.
+ * **Document fields**: a single dictionary per document to store metadata in.
  * **Text**: The basic text representation, a wrapped string to track spans.
  * **Text Spans**: Subsequence of a string, can always be converted into a hard string by using str(span)
- * **Layer Schema**: Definition of field names and types when document is serialized
  * **Layer**: Collection of nodes
+ * **Layer Schema**: Definition of field names and types when document is serialized
  * **Node**: Single node with zero or more fields with values
  * **Node fields**: Key, value pairs.
 

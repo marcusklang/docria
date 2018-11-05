@@ -23,16 +23,17 @@ import functools
 
 def parent_span_cover(parent_nodes,  children_nodes, parent_span_prop="text", children_span_prop="text")->List[Tuple[Node, List[Node]]]:
     """Find all (parent, list(children)) span covers."""
-    pass
+    raise NotImplementedError()
 
 
 def parent_span_overlap(parent_nodes,  children_nodes, parent_span_prop="text", children_span_prop="text")->List[Tuple[Node, List[Node]]]:
     """Find all (parent, list(children)) span overlaps/intersections"""
-    pass
+    raise NotImplementedError()
 
 
 def shortest_path(start: Node, target: Node, children: Callable[[Node], Iterator[Node]], cost: Callable[[Node,Node], bool])->List[Node]:
-    pass
+    """Shortest path between nodes"""
+    raise NotImplementedError()
 
 
 def get_prop(prop, default=None):
