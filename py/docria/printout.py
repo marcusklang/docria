@@ -89,6 +89,13 @@ class PrintOptions:
 options = PrintOptions()
 
 
+def set_large_screen():
+    """Sets options to higher than default widths"""
+    global options
+    options.max_column_width = 200
+    options.max_display_width = 200
+
+
 class TableStyle:
     def __init__(self, padding=2):
         self.padding = padding

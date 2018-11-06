@@ -32,6 +32,12 @@ class SchemaError(Exception):
         super().__init__(message)
 
 
+class DataValidationError(Exception):
+    """Failed to validate document"""
+    def __init__(self, message):
+        super().__init__(message)
+
+
 class DictAsMembers:
     def __init__(self, data):
         self.__data__ = data
@@ -267,7 +273,7 @@ class Text:
                 raise NotImplementedError("Negative indexes are not yet implemented.")
 
             if indx.start > len(self.text) or indx.stop > len(self.text):
-                raise ValueError("Out of bounds: [%d, %d)" % (indx.start, indx.stop))
+                raise DataValidationError("Out of bounds: [%d, %d), text length: %d" % (indx.start, indx.stop, len(self.text)))
 
             start_offset = self._offsets.setdefault(indx.start, Offset(indx.start))
             stop_offset = self._offsets.setdefault(indx.stop, Offset(indx.stop))
@@ -517,10 +523,15 @@ class NodeLayerCollection:
                 if DataTypes.matches(node[field], fieldtype.nativetype):
                     continue
                 else:
-                    valuetype = DataTypes.typeof(node[field], fieldtype)
-                    if valuetype != fieldtype:
-                        raise SchemaError("Invalid node, typeof(%s) = %s does not match %s. Ref: %s" % (
-                            repr(node[field]), repr(valuetype), repr(fieldtype), repr(node)))
+                    try:
+                        valuetype = DataTypes.typeof(node[field], fieldtype)
+                        if valuetype != fieldtype:
+                            raise DataValidationError("Invalid node, typeof(%s) = %s does not match %s. Ref: %s" % (
+                                repr(node[field]), repr(valuetype), repr(fieldtype), repr(node)))
+                    except ValueError as e:
+                        raise DataValidationError("Found value which was not supported: "
+                                                  "%s, in layer %s, field %s, node with id: %d" %
+                                                  (node[field], node.collection.name, field, node._id)) from e
 
         return True
 
@@ -618,7 +629,7 @@ class NodeLayerCollection:
             if item.collection is self:
                 return item
             else:
-                raise ValueError("Node is not part of this node collection '%s': %s" % (self.name, repr(item)))
+                raise DataValidationError("Node is not part of this node collection '%s': %s" % (self.name, repr(item)))
         elif isinstance(item, list):
             if len(item) == 0:
                 return []
