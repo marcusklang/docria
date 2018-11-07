@@ -55,7 +55,6 @@ def test_primary_msgpack():
     named_entity = doc.layers["named_entity"]
 
     repr = MsgpackCodec.encode(doc)
-    print(base64.standard_b64encode(repr).decode("ascii"))
 
     assert str(main_text) == "This code was written in Lund, Sweden."
     assert " ".join(map(str, map(lambda tok: tok["text"], list(token)))) == "This code was written in Lund , Sweden ."
@@ -82,8 +81,6 @@ def test_java_interaction():
         "RE1fMQGAkqxuYW1lZF9lbnRpdHmldG9rZW4Co2Nsc8Kjc3RypHRleHTDpHNwYW6Bp2NvbnRleHSkbWFpbgGkdGV4dMOkc3BhboGnY29udGV4d"
         "KRtYWluPIGkbWFpbp+kVGhpc6EgpGNvZGWhIKN3YXOhIKd3cml0dGVuoSCiaW6hIKRMdW5koSyhIKZTd2VkZW6hLhECwpKjR1BFo0dQRcKUCg"
         "sNDhcJwtwAEgABAgMEBQYHCAkKCwsMDQ4ODw==")
-
-    MsgpackCodec.debug(binary_data)
 
     doc = MsgpackCodec.decode(binary_data)
     assert " ".join(map(lambda tok: str(tok["text"]), doc.layers["token"])) == "This code was written in Lund , Sweden ."

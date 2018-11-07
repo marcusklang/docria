@@ -15,25 +15,10 @@
 # limitations under the License.
 #
 
-from docria.model import Node, NodeLayerCollection, TEnum
+from docria.model import Document, Node, NodeLayerCollection, TEnum
 from typing import Set, List, Callable, Tuple, Dict, Optional, Iterator
 from collections import deque
 import functools
-
-
-def parent_span_cover(parent_nodes,  children_nodes, parent_span_prop="text", children_span_prop="text")->List[Tuple[Node, List[Node]]]:
-    """Find all (parent, list(children)) span covers."""
-    raise NotImplementedError()
-
-
-def parent_span_overlap(parent_nodes,  children_nodes, parent_span_prop="text", children_span_prop="text")->List[Tuple[Node, List[Node]]]:
-    """Find all (parent, list(children)) span overlaps/intersections"""
-    raise NotImplementedError()
-
-
-def shortest_path(start: Node, target: Node, children: Callable[[Node], Iterator[Node]], cost: Callable[[Node,Node], bool])->List[Node]:
-    """Shortest path between nodes"""
-    raise NotImplementedError()
 
 
 def get_prop(prop, default=None):
@@ -204,3 +189,79 @@ def dfs_leaves(start: Node,
             yield current
 
         stack.extend(child_nodes)
+
+
+def span_translate(doc: Document,
+                   mapping_layer: str, target_source_map: Tuple[str,str],
+                   layer_remap: str, source_target_remap: Tuple[str, str]):
+
+    target_pos, source_pos = target_source_map
+    target_pos_remap, source_pos_remap = source_target_remap
+
+    mapping_layer = doc.layer[mapping_layer]
+    assert mapping_layer.schema.fields[target_pos].typename == TEnum.SPAN
+    assert mapping_layer.schema.fields[source_pos].typename == TEnum.SPAN
+
+    layer_remap = doc.layer[layer_remap]
+    assert layer_remap.schema.fields[source_pos_remap].typename == TEnum.SPAN
+    assert layer_remap.schema.fields[target_pos_remap].typename == TEnum.SPAN
+
+    target_text = doc.texts[mapping_layer.schema.fields[target_pos].options["context"]]
+
+    # 1. Find start/end point interval intersections against mapping
+    # 1.1 Produce mapping array
+    mapping_in_source = []
+
+    for m in mapping_layer:
+        sourceStart = m[source_pos].start
+        sourceStop  = m[source_pos].stop
+
+        mapping_in_source.append(((sourceStart, 0), (0, m)))
+        mapping_in_source.append(((sourceStop, -1), (0, m)))
+
+    for n in layer_remap:
+        if not target_pos_remap in n:
+            sourceRemapStart = n[source_pos_remap].start
+            sourceRemapStop = n[source_pos_remap].stop-1
+
+            mapping_in_source.append(((sourceRemapStart, 1), (1, n)))
+            mapping_in_source.append(((sourceRemapStop, 2), (1, n)))
+
+    mapping_in_source.sort(key=lambda tup: tup[0])
+
+    # 2. Translate points with relative distance from start in interval
+    remap_start_offsets = {}
+
+    active_interval_start = None
+    active_interval_target_start = None
+    active_node = None
+    for pos, source in mapping_in_source:
+        marker, markertype = pos
+        sourcetype, node = source
+
+        if sourcetype == 0:
+            if markertype == -1:
+                # End
+                active_interval_start = None
+                active_interval_target_start = None
+                active_node = None
+            elif markertype == 0:
+                assert active_interval_start is None, "Overlapping mapping is not allowed!"
+                active_interval_start = marker
+                active_interval_target_start = node[target_pos].start
+                active_node = node
+            else:
+                assert False, "Bug! Should never happen."
+        elif sourcetype == 1:
+            assert active_interval_start is not None, "Current position %d is outside any " \
+                                                "mapping interval, i.e. there is a gap in the mapping!" % marker
+
+            if markertype == 1:
+                remap_start_offsets[node._id] = (marker - active_interval_start) + active_interval_target_start
+            elif markertype == 2:
+                assert node._id in remap_start_offsets, "Start was not encountered, possibly input data invalid or bug!"
+
+                stopOffset = (marker - active_interval_start) + active_interval_target_start + 1
+                startOffset = remap_start_offsets[node._id]
+
+                node[target_pos_remap] = target_text[startOffset:stopOffset]

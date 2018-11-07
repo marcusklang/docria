@@ -46,9 +46,6 @@ def test_io():
 
     with DocumentReader(BoundaryReader(open("test.docria", "rb"))) as reader:
         doc = next(reader)  # type:
-        print(doc)
-
-        print(doc.layers["token"])
 
     os.unlink("test.docria")
 

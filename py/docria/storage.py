@@ -225,7 +225,8 @@ class Codecs:
     NONE = ("none", lambda x: x, lambda x: x)
     DEFLATE = ("zip", lambda x: zlib.compress(x), lambda x: zlib.decompress(x))
     DEFLATE_SQUARED = ("zipsq",
-                       lambda x: zlib.compress(zlib.compress(x, level=zlib.Z_BEST_COMPRESSION), level=zlib.Z_BEST_COMPRESSION),
+                       lambda x: zlib.compress(zlib.compress(x, level=zlib.Z_BEST_COMPRESSION)
+                                               , level=zlib.Z_BEST_COMPRESSION),
                        lambda x: zlib.decompress(zlib.decompress(x)))
 
 
@@ -329,7 +330,7 @@ class DocumentReader:
 class DocumentWriter:
     def __init__(self, outputio: RawIOBase, num_docs_per_block=128, codec=Codecs.DEFLATE, **kwargs):
         self.outputio = outputio
-        self.packer = Packer(use_bin_type=True, encoding="utf-8")
+        self.packer = Packer(use_bin_type=True)
 
         self.outputio.write(b"Dmf1")
         self.outputio.write(self.packer.pack(codec[0]))
@@ -451,7 +452,8 @@ class DocumentFileIndex:
                     else:
                         yield MsgpackCodec.decode(next(lastblk._unpacker))
                 except Exception as e:
-                    raise IOError("Failed to read document in %s for ref %d, %d" % (self.filepath, ref[0], ref[1]))
+                    raise IOError("Failed to read document in %s "
+                                  "for ref %d, %d" % (self.filepath, ref[0], ref[1])) from e
 
 
 class DocumentIndex:
@@ -494,7 +496,8 @@ def build_file_index(path, *props):
 def build_directory_index(path, *props, basepath="."):
     from multiprocessing import Pool
 
-    docria_files = [os.path.join(path, fpath) for fpath in os.listdir(path) if not fpath.startswith(".") and fpath.lower().endswith(".docria")]
+    docria_files = [os.path.join(path, fpath) for fpath in os.listdir(path)
+                    if not fpath.startswith(".") and fpath.lower().endswith(".docria")]
     master_indx = DocumentIndex(basepath=basepath)
 
     proplist = list(props)
@@ -504,12 +507,14 @@ def build_directory_index(path, *props, basepath="."):
             from tqdm import tqdm
 
             with tqdm("Building index", total=len(docria_files)) as pbar:
-                for indxitem in p.imap_unordered(_build_file_index, [{"path": path, "props": proplist} for path in docria_files]):
+                for indxitem in p.imap_unordered(_build_file_index, [{"path": path, "props": proplist}
+                                                                     for path in docria_files]):
                     master_indx.add(indxitem)
                     pbar.update(1)
 
         else:
-            for indxitem in p.imap_unordered(_build_file_index, [{"path": path, "props": proplist} for path in docria_files]):
+            for indxitem in p.imap_unordered(_build_file_index, [{"path": path, "props": proplist}
+                                                                 for path in docria_files]):
                 master_indx.add(indxitem)
 
     return master_indx
