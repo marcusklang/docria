@@ -194,9 +194,19 @@ def dfs_leaves(start: Node,
 def span_translate(doc: Document,
                    mapping_layer: str, target_source_map: Tuple[str,str],
                    layer_remap: str, source_target_remap: Tuple[str, str]):
+    """
+    Translate span ranges from a partial extraction to the original data.
 
+    Target is the original data, Source is the partial extraction ranges.
+
+    :param doc: document
+    :param mapping_layer: the layer which contains the mapping
+    :param target_source_map: tuple of (target field, source field)
+    :param layer_remap: the layer which should be mapped
+    :param source_target_remap: tuple of (source field, target field)
+    """
     target_pos, source_pos = target_source_map
-    target_pos_remap, source_pos_remap = source_target_remap
+    source_pos_remap, target_pos_remap = source_target_remap
 
     mapping_layer = doc.layer[mapping_layer]
     assert mapping_layer.schema.fields[target_pos].typename == TEnum.SPAN
@@ -220,7 +230,7 @@ def span_translate(doc: Document,
         mapping_in_source.append(((sourceStop, -1), (0, m)))
 
     for n in layer_remap:
-        if not target_pos_remap in n:
+        if target_pos_remap not in n:
             sourceRemapStart = n[source_pos_remap].start
             sourceRemapStop = n[source_pos_remap].stop-1
 

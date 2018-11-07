@@ -455,15 +455,17 @@ class NodeLayerSchema:
 
     def add(self, name: str, fieldtype: "DataType"):
         if name in self.fields:
-            raise ValueError("Field %s already exists on layer %s" % (name, self.name))
+            raise ValueError("Field '%s' already exists on layer %s" % (name, self.name))
 
         self.fields[name] = fieldtype
         return self
 
     def set(self, **kwargs):
         for k, v in kwargs.items():
+            assert isinstance(v, DataType), "Type of field '%s' is not a DataType, it is: %s" % (k, repr(v))
+
             if k in self.fields:
-                raise ValueError("Field %s already exists on layer %s" % (k, self.name))
+                raise ValueError("Field '%s' already exists on layer %s" % (k, self.name))
 
             self.fields[k] = v
 
@@ -733,11 +735,25 @@ class Document:
 
         :param kwargs: property key, values
         """
-        self.layers = {}  # type: Dict[str, NodeLayerCollection]
-        self.layer = self.layers
-        self.texts = {}  # type: Dict[str, Text]
-        self.text = self.texts
+        self._layers = {}  # type: Dict[str, NodeLayerCollection]
+        self._texts = {}  # type: Dict[str, Text]
         self.props = dict(kwargs)  # type: Dict[str, Any]
+
+    @property
+    def text(self):
+        return self._texts
+
+    @property
+    def texts(self):
+        return self._texts
+
+    @property
+    def layer(self):
+        return self._layers
+
+    @property
+    def layers(self):
+        return self._layers
 
     def add_text(self, name, text):
         """
