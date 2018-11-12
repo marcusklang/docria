@@ -537,13 +537,30 @@ class NodeLayerCollection:
 
         return True
 
-    def add(self, **kwargs) -> Node:
-        node = Node(**kwargs)
-        node._id = len(self._nodes)
-        node.collection = self
-        self._nodes.append(node)
-        self.num += 1
-        return node
+    def add(self, *args, **kwargs) -> Node:
+        """
+        Add node to this layer
+
+        :param args: Node objects, if used then kwargs are ignored
+        :param kwargs: create nodes from given properties, ignored if len(args) > 0
+        :return: node if kwargs was used
+        """
+        if len(args) > 0:
+            for n in args:
+                if isinstance(n, Node):
+                    n._id = len(self._nodes)
+                    n.collection = self
+                    self._nodes.append(n)
+                    self.num += 1
+                else:
+                    raise ValueError(n)
+        else:
+            node = Node(**kwargs)
+            node._id = len(self._nodes)
+            node.collection = self
+            self._nodes.append(node)
+            self.num += 1
+            return node
 
     def add_many(self, nodes):
         num_nodes = self.num
@@ -867,12 +884,18 @@ class Document:
         from docria.codec import MsgpackCodec
 
         doc = MsgpackCodec.decode(state["msgpacked"])
-        self.layers = doc.layers
-        self.texts = doc.texts
+        self._layers = doc.layers
+        self._texts = doc.texts
         self.props = doc.props
 
     def __getitem__(self, key):
         return self.layers[key]
+
+    def __delitem__(self, key):
+        return self.remove_layer(name=key)
+
+    def __contains__(self, item):
+        return item in self._layers
 
     def compile(self, extra_fields_ok=False, type_validation=True, **kwargs):
         """Compile the document, validates and assigns compacted ids to nodes (internal use)
