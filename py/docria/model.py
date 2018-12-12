@@ -78,6 +78,9 @@ class Node(dict):
     def validate(self):
         self.collection.validate(self)
 
+    def _ipython_key_completions_(self):
+        return list(self.keys())
+
     def __hash__(self):
         return id(self)
 
@@ -85,6 +88,10 @@ class Node(dict):
         return self is other
 
     def __str__(self):
+        tbl = self._table_repr_()
+        return tbl.render_text()
+
+    def _table_repr_(self):
         from docria.printout import Table, get_representation
         tbl = Table(hide_index=True,
                     caption="Node %s#%d" % (self.collection.schema.name, self._id) if len(self) > 0 else "")
@@ -94,7 +101,11 @@ class Node(dict):
         for k, v in self.items():
             tbl.add_body(k, get_representation(v))
 
-        return tbl.render_text()
+        return tbl
+
+    def _repr_html_(self):
+        tbl = self._table_repr_()
+        return tbl.render_html()
 
     def __repr__(self):
         return "Node<%s#%d>" % (self.collection.schema.name, self._id) if len(self) > 0 else ""
@@ -107,7 +118,7 @@ class NodeList(list):
     def __iter__(self)->Iterator[Node]:
         return super().__iter__()
 
-    def __str__(self):
+    def _table_repr_(self):
         fields = set()
 
         for n in self:
@@ -122,6 +133,14 @@ class NodeList(list):
             values = list(map(lambda k: get_representation(n.get(k, None)), fields))
             tbl.add_body(TableRow(*values))
 
+        return tbl
+
+    def _repr_html_(self):
+        tbl = self._table_repr_()
+        return tbl.render_html()
+
+    def __str__(self):
+        tbl = self._table_repr_()
         return tbl.render_text()
 
 
@@ -229,6 +248,10 @@ class Text:
     def __str__(self):
         """Convert to string"""
         return self.text
+
+    def _repr_html_(self):
+        from html import escape
+        return "<h3>Text: {0}</h3><pre>{1}</pre>".format(self.name, escape(self.text))
 
     def _gc(self):
         """Remove unused offsets. Assumes reference counter has been properly initialized."""
@@ -620,7 +643,7 @@ class NodeLayerCollection:
     def __repr__(self):
         return "Layer(%s, N=%d)" % (self.name, self.num)
 
-    def __str__(self):
+    def _table_repr_(self):
         from docria.printout import Table, TableRow, get_representation
 
         cols = list(sorted(self.schema.fields.keys()))
@@ -636,7 +659,13 @@ class NodeLayerCollection:
 
             table.add_body(TableRow(*fld_data, index="#%d" % n._id))
 
-        return table.render_text()
+        return table
+
+    def _repr_html_(self):
+        return self._table_repr_().render_html()
+
+    def __str__(self):
+        return self._table_repr_().render_text()
 
     def __len__(self):
         return self.num
@@ -890,6 +919,9 @@ class Document:
 
     def __getitem__(self, key):
         return self.layers[key]
+
+    def _ipython_key_completions_(self):
+        return list(self.layers.keys())
 
     def __delitem__(self, key):
         return self.remove_layer(name=key)

@@ -17,6 +17,7 @@
 
 from typing import List, Dict, Tuple, Optional
 from html import escape
+import re
 
 
 class PrintOptions:
@@ -132,6 +133,24 @@ class TableCell:
         self.html = html
 
 
+URN_MATCH = re.compile(r"urn:(\w+):(.+)")
+
+
+def urn_link_wikidata(partial):
+    return "https://www.wikidata.org/wiki/{0}".format(escape(partial))
+
+
+def urn_link_wikipedia(partial):
+    parts = partial.split(":", 1)
+    return "https://{0}.wikipedia.org/wiki/{1}".format(escape(parts[0]), escape(parts[1]))
+
+
+URN_LINK_FN = {
+    "wikidata": urn_link_wikidata,   # ex: urn:wikidata:Q34 - Sweden
+    "wikipedia": urn_link_wikipedia  # ex: urn:wikipedia:sv:Sverige - Sverige
+}
+
+
 class Table:
     """Table representation for text and HTML"""
     def __init__(self, caption: Optional[str]=None, style=TableStyle(), hide_index=False, hide_headers=False):
@@ -176,8 +195,19 @@ class Table:
         for col in row.elems:
             if isinstance(col, TableCell):
                 output.append(col.html)
-            else:
-                output.append(escape(truncate(str(col))))
+                continue
+            elif isinstance(col, str):
+                if URN_MATCH.fullmatch(col) is not None:
+                    parts = col.split(":", 2)
+                    urn_type = parts[1].lower()
+                    if urn_type in URN_LINK_FN:
+                        output.append("<a href='{0}'>{1}</a>".format(
+                            URN_LINK_FN[urn_type](parts[2]), escape(truncate(str(col)))
+                            )
+                        )
+                        continue
+
+            output.append(escape(truncate(str(col))))
 
         return output
 
@@ -292,14 +322,48 @@ class Table:
         return "\n".join(output)
 
     def render_html(self):
-        pass
+        output = ["<table>", "<thead>"]
+
+        headers, rows = self._compile_html()
+
+        if self.caption is not None:
+            output.append("<tr>")
+            output.append("<th colspan='{0}' style='text-align:center'><em>".format(len(headers)))
+            output.append(escape(self.caption))
+            output.append("</em></th></tr>")
+
+        output.append("<tr>")
+        for header in headers:
+            output.append("<th style='text-align:left'>")
+            output.append(header)
+            output.append("</th>")
+
+        output.append("</tr>")
+        output.append("</thead>")
+        output.append("<tbody>")
+
+        for row in rows:
+            if row is None:
+                output.append("<tr><td colspan='{0}' style='text-align:center'>. . .</td></tr>".format(len(headers)))
+            else:
+                output.append("<tr>")
+                for col in row:
+                    output.append("<td style='text-align:left'>{0}</td>".format(col))
+                output.append("</tr>")
+        output.append("</tbody>")
+        output.append("</table>")
+
+        return "".join(output)
+
+
+_NIL_VALUE = TableCell(text="NIL", html="<em>NIL</em>")
 
 
 def get_representation(value):
     from docria.model import Node
 
     if value is None:
-        return "NIL"
+        return _NIL_VALUE
     elif isinstance(value, list):
         if len(value) == 1:
             return "[%s]" % repr(value[0])

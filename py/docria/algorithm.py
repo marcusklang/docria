@@ -244,7 +244,6 @@ def span_translate(doc: Document,
 
     active_interval_start = None
     active_interval_target_start = None
-    active_node = None
     for pos, source in mapping_in_source:
         marker, markertype = pos
         sourcetype, node = source
@@ -254,12 +253,10 @@ def span_translate(doc: Document,
                 # End
                 active_interval_start = None
                 active_interval_target_start = None
-                active_node = None
             elif markertype == 0:
-                assert active_interval_start is None, "Overlapping mapping is not allowed!"
+                assert active_interval_start is None, "Mapping which overlaps is not allowed!"
                 active_interval_start = marker
                 active_interval_target_start = node[target_pos].start
-                active_node = node
             else:
                 assert False, "Bug! Should never happen."
         elif sourcetype == 1:
