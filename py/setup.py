@@ -14,7 +14,7 @@ with open('requirements.txt') as f:
 
 setup(
     name='docria',
-    version='0.1.2',
+    version='0.1.3',
     description='Semi-structured Document Model',
     long_description=readme,
     long_description_content_type="text/x-rst",
