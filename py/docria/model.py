@@ -195,8 +195,11 @@ class TextSpan:
         return (self.start_offset, self.stop_offset) == (textrange.startOffset, textrange.stopOffset)
 
     def __getitem__(self, indx: slice):
-        # TODO: Extract slice of text span
-        raise NotImplementedError("TODO")
+        if indx.step is not None and indx.step != 1:
+            raise NotImplementedError("Only step == 1 are supported.")
+
+        start, stop, step = indx.indices(len(self))
+        return self.text[start+self.start:stop+self.start]
 
     def __repr__(self):
         return "span(%s[%d:%d]) = %s" % (
@@ -289,17 +292,22 @@ class Text:
     def __getitem__(self, indx):
         """Get a slice of the text"""
         if isinstance(indx, slice):
-            if indx.step is not None and indx.step > 1:
+            if indx.step is not None and indx.step != 1:
                 raise NotImplementedError("Only step == 1 are supported.")
 
-            if indx.start < 0 or indx.stop < 0:
-                raise NotImplementedError("Negative indexes are not yet implemented.")
+            start, stop, _ = indx.indices(len(self.text))
 
-            if indx.start > len(self.text) or indx.stop > len(self.text):
-                raise DataValidationError("Out of bounds: [%d, %d), text length: %d" % (indx.start, indx.stop, len(self.text)))
+            if stop < start:
+                raise DataValidationError(
+                    "Negative length is not allowed, stop < start: "
+                    "[%d, %d), text length: %d" % (start, stop, len(self.text)))
 
-            start_offset = self._offsets.setdefault(indx.start, Offset(indx.start))
-            stop_offset = self._offsets.setdefault(indx.stop, Offset(indx.stop))
+            if start > len(self.text) or stop > len(self.text):
+                raise DataValidationError("Out of bounds: [%d, %d), "
+                                          "text length: %d" % (indx.start, indx.stop, len(self.text)))
+
+            start_offset = self._offsets.setdefault(start, Offset(indx.start))
+            stop_offset = self._offsets.setdefault(stop, Offset(indx.stop))
             return TextSpan(self, start_offset, stop_offset)
         elif isinstance(indx, tuple) and len(indx) == 2:
             start_offset = self._offsets.setdefault(int(indx[0]), Offset(int(indx[0])))

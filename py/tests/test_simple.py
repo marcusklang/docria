@@ -107,11 +107,32 @@ def test_schema():
         assert True
 
 
+def test_text():
+    doc = Document()
+    doc.add_text("main", "This code was written in Lund, Sweden")
+    #                     01234567890123456789012345678901234567
+    #                     0         1         2         3
+
+    main_text = doc.text["main"]
+    assert str(main_text) == "This code was written in Lund, Sweden"
+    assert str(main_text[:]) == "This code was written in Lund, Sweden"
+    assert str(main_text[:4]) == "This"
+    assert str(main_text[31:]) == "Sweden"
+    assert str(main_text[14:21]) == "written"
+    assert str(main_text[-4:-2]) == "ed"
+    assert str(main_text[:-2]) == "This code was written in Lund, Swed"
+
+    assert str(main_text[14:21][0:2]) == "wr"
+    assert str(main_text[14:21][:2]) == "wr"
+    assert str(main_text[14:21][2:5]) == "itt"
+    assert str(main_text[14:21][:-2]) == "writt"
+    assert str(main_text[14:21][-2:]) == "en"
+    assert str(main_text[14:21][:]) == "written"
+
+
 def test_typing():
     pass
 
 
 def test_graph():
     pass
-
-test_primary_msgpack()
