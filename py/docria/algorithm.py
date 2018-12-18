@@ -15,9 +15,9 @@
 # limitations under the License.
 #
 
-from docria.model import Document, Node, NodeLayerCollection, TEnum
-from typing import Set, List, Callable, Tuple, Dict, Optional, Iterator
-from collections import deque
+from docria.model import Document, Node, NodeLayerCollection, TEnum, TextSpan
+from typing import Set, List, Callable, Tuple, Dict, Optional, Iterator, Iterable
+from collections import deque, namedtuple, defaultdict
 import functools
 
 
@@ -272,3 +272,120 @@ def span_translate(doc: Document,
                 startOffset = remap_start_offsets[node._id]
 
                 node[target_pos_remap] = target_text[startOffset:stopOffset]
+
+
+def is_covered_by(span_a: TextSpan, span_b: TextSpan)->bool:
+    """
+    Covered by predicate
+    :param span_a: the node that is tested for cover
+    :param span_b: the node that might cover span_a
+    :return: true or false
+    """
+    return span_a.start >= span_b.start and span_a.stop <= span_b.stop
+
+
+def group_by_span(group_nodes: List[Node],
+                  layer_nodes: Dict[str, Iterable[Node]],
+                  resolution="intersect",
+                  group_span_field ="text",
+                  layer_span_field=None,
+                  include_empty_groups=True)\
+        ->List[Tuple[Node, Dict[str, List[Node]]]]:
+    """
+    Groups all nodes in layer_nodes into the corresponding bucket_node
+
+    Nodes with spans that equals to NIL/None are ignored.
+
+    :param group_nodes: the nodes to group by
+    :param layer_nodes: the nodes to assign to zero or more groups
+    :param resolution:  which resolution algorithm that shall be used: intersect or cover
+                        intersect: the identity function for resolutions (all intersects are grouped)
+                        cover: imposes a requirement that the group node must fully
+                               cover the layer node (node_start >= group_start and node_stop <= group_stop)
+    :param group_span_field: name of span property name, defaults to text
+    :param layer_span_field: layer to span property name, defaults to text
+    :param include_empty_groups: include groups which does not contain any matching layer nodes
+    """
+    if layer_span_field is None:
+        layer_span_field = defaultdict(lambda: "text")
+
+    node_list = []  # type: List[Tuple[Tuple[int, int], Tuple[Optional[str], Node]]]
+
+    # 1. Convert all nodes to Start, Stop symbols with added context information
+    for group_node in group_nodes:
+        if group_span_field in group_node:
+            span = group_node[group_span_field]  # type: TextSpan
+            node_list.append(((span.start, 0), (None, group_node)))
+            node_list.append(((span.stop, -2), (None, group_node)))
+
+    for layer_name, layer in layer_nodes.items():
+        span_name = layer_span_field.get(layer_name)
+        assert span_name is not None, "Could not find span property name for layer: %s" % layer_name
+
+        for layer_node in layer:
+            if span_name in layer_node:
+                span = layer_node[span_name]  # type: TextSpan
+                node_list.append(((span.start, 1), (layer_name, layer_node)))
+                node_list.append(((span.stop, -1), (layer_name, layer_node)))
+
+    # 2. Sort by start, stop
+    node_list.sort(key=lambda tup: tup[0])
+
+    node_list_groups = []  # type: List[List[Tuple[Tuple[int,int], Tuple[Optional[str], Node]]]]
+    current_group = None
+    for tup in node_list:
+        if tup[0] is not None and current_group == tup[0]:
+            node_list_groups[-1].append(tup)
+        else:
+            node_list_groups.append([tup])
+
+    # 3. Run sweep, and assign all groups relevant nodes
+    groups = dict()  # type: Dict[Node, Dict[str, List[Node]]]
+    group_list = list()  # type: List[Tuple[Node, Dict[str, List[Node]]]]
+    open_nodes = set()
+    open_groups = set()
+
+    k = 0
+    while k < len(node_list_groups):
+        nodes = node_list_groups[k]
+        if nodes[0][0][1] >= 0:
+            # Group start
+            for _, (layer, node) in nodes:
+                if layer is not None:
+                    open_nodes.add((layer, node))
+                    for open_group in open_groups:
+                        groups[open_group][layer].append(node)
+                else:
+                    group_dict = {k: [] for k in layer_nodes.keys()}
+                    groups[node] = group_dict
+                    group_list.append((node, group_dict))
+                    open_groups.add(node)
+
+                    for open_layer, open_node in open_nodes:
+                        group_dict[open_layer].append(open_node)
+        else:
+            # Group stop
+            for _, (layer, node) in nodes:
+                if layer is not None:
+                    open_nodes.remove((layer, node))
+                else:
+                    open_groups.remove(node)
+
+        k += 1
+
+    # 4. Apply resolution algorithm if necessary
+    if resolution == "cover":
+        for i in range(len(group_list)):
+            group_node, layer_group_nodes = group_list[i]
+            group_span = group_node[group_span_field]
+            group_list[i] = (group_node, {
+                k: [n for n in v if is_covered_by(n[layer_span_field[k]], group_span)]
+                for k, v in layer_group_nodes.items()
+            })
+
+    # 5. Final filtering if necessary
+    if not include_empty_groups:
+        group_list = [grp for grp in group_list if sum(map(len, grp[1].values())) > 0]
+
+    # 4. Return result
+    return group_list
