@@ -3,6 +3,7 @@ package se.lth.cs.docria.tests;
 import org.junit.Assert;
 import org.junit.Test;
 import se.lth.cs.docria.*;
+import se.lth.cs.docria.algorithms.DominantRight;
 import se.lth.cs.docria.algorithms.GroupBySpan;
 
 import java.util.*;
@@ -154,5 +155,28 @@ public class AlgoTest {
         verifyTokenSet(13, id2group, 4);
         verifyTokenSet(14, id2group, 7);
         Assert.assertNull(id2group.get(15));
+    }
+
+    @Test
+    public void testDominantRight() {
+        ArrayList<DominantRight.Segment<Integer>> segments = new ArrayList<>();
+        segments.add(new DominantRight.Segment<>(0,3, 0));
+        segments.add(new DominantRight.Segment<>(1,4, 1));
+        segments.add(new DominantRight.Segment<>(0, 1, 2));
+        segments.add(new DominantRight.Segment<>(0, 6, 3));
+        segments.add(new DominantRight.Segment<>(4, 5, 4));
+        segments.add(new DominantRight.Segment<>(8, 10, 5));
+        segments.add(new DominantRight.Segment<>(11, 15, 6));
+        segments.add(new DominantRight.Segment<>(14, 16, 7));
+        segments.add(new DominantRight.Segment<>(20, 25, 8));
+        segments.add(new DominantRight.Segment<>(19, 21, 9));
+
+        List<Integer> resolved = DominantRight.resolve(segments);
+
+        Assert.assertEquals(4, resolved.size());
+        Assert.assertTrue(resolved.contains(3));
+        Assert.assertTrue(resolved.contains(5));
+        Assert.assertTrue(resolved.contains(6));
+        Assert.assertTrue(resolved.contains(8));
     }
 }
