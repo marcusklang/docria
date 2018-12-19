@@ -97,29 +97,6 @@ def test_group_by():
 
 
 def test_dominant_right():
-    """"
-        IntArrayList isegments = new IntArrayList();
-        isegments.add(0); isegments.add(3); //0
-        isegments.add(1); isegments.add(4); //1
-        isegments.add(0); isegments.add(1); //2
-        isegments.add(0); isegments.add(6); //3
-        isegments.add(4); isegments.add(5); //4
-        isegments.add(8); isegments.add(10); //5
-
-        isegments.add(11); isegments.add(15); //6
-        isegments.add(14); isegments.add(16); //7
-
-        isegments.add(20); isegments.add(25); //8
-        isegments.add(19); isegments.add(21); //9
-
-        IntArrayList ids = DominantRight.resolveSegments(isegments);
-        assertEquals(4, ids.size());
-        assertEquals(3, ids.getInt(0));
-        assertEquals(5, ids.getInt(1));
-        assertEquals(6, ids.getInt(2));
-        assertEquals(8, ids.getInt(3));
-    """
-
     segments = [
         (0, 3, 0),
         (1, 4, 1),
