@@ -16,7 +16,7 @@
 #
 
 from docria.model import Document, Node, NodeLayerCollection, TEnum, TextSpan
-from typing import Set, List, Callable, Tuple, Dict, Optional, Iterator, Iterable
+from typing import Set, List, Callable, Tuple, Dict, Optional, Iterator, Iterable, Any
 from collections import deque, namedtuple, defaultdict
 import functools
 
@@ -325,8 +325,10 @@ def group_by_span(group_nodes: List[Node],
                 node_list.append(((span.stop, -2), (None, group_node)))
 
     for layer_name, layer in layer_nodes.items():
-        span_name = layer_span_field.get(layer_name)
-        assert span_name is not None, "Could not find span property name for layer: %s" % layer_name
+        try:
+            span_name = layer_span_field[layer_name]
+        except KeyError as e:
+            raise KeyError("Could not find span property name for layer: %s" % layer_name) from e
 
         for layer_node in layer:
             if span_name in layer_node:
@@ -401,3 +403,40 @@ def group_by_span(group_nodes: List[Node],
 
     # 4. Return result
     return group_list
+
+
+def dominant_right(segments: List[Tuple[int, int, Any]])->List[Any]:
+    segment_list = []
+    for tup in segments:
+        start, stop, item = tup
+        segment_list.append(((start, 0), tup))
+        if start != stop:
+            segment_list.append(((stop-1, 1), tup))
+        else:
+            segment_list.append(((stop, 1), tup))
+
+    segment_list.sort(key=lambda el: el[0])
+
+    segment_output = []
+    open_node = None
+
+    for ((off, mode), tup) in segment_list:
+        if mode == 0:
+            if open_node is not None:
+                start, stop, item = open_node
+
+                if stop-start <= tup[1]-tup[0]:
+                    open_node = tup
+            else:
+                open_node = tup
+        else:
+            if open_node is tup:
+                segment_output.append(tup[2])
+                open_node = None
+
+    return segment_output
+
+
+def dominant_right_span(nodes: Iterable[Node], spanfield: str)->List[Node]:
+    segments = [(n[spanfield].start, n[spanfield].stop, n) for n in nodes if spanfield in n]
+    return dominant_right(segments)
