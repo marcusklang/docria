@@ -194,12 +194,20 @@ class TextSpan:
     def __eq__(self, textrange):
         return (self.start_offset, self.stop_offset) == (textrange.startOffset, textrange.stopOffset)
 
-    def __getitem__(self, indx: slice):
-        if indx.step is not None and indx.step != 1:
-            raise NotImplementedError("Only step == 1 are supported.")
+    def __getitem__(self, indx: Union[slice, Tuple[int, int], int]):
+        if isinstance(indx, slice):
+            if indx.step is not None and indx.step != 1:
+                raise NotImplementedError("Only step == 1 are supported.")
 
-        start, stop, step = indx.indices(len(self))
-        return self.text[start+self.start:stop+self.start]
+            start, stop, step = indx.indices(len(self))
+            return self.text[start+self.start:stop+self.start]
+        elif isinstance(indx, tuple) and len(indx) == 2:
+            return self.text[indx[0]+self.start:indx[1]+self.start]
+        elif isinstance(indx, int):
+            start, stop, step = slice(indx, indx+1).indices(len(self))
+            return self.text.text[start+self.start]
+        else:
+            raise ValueError("Unsupported input indx: %s" % repr(indx))
 
     def __repr__(self):
         return "span(%s[%d:%d]) = %s" % (
@@ -208,6 +216,9 @@ class TextSpan:
             self.stop_offset.offset,
             repr(self.text.text[self.start_offset.offset:self.stop_offset.offset])
         )
+
+    def __iter__(self):
+        return iter(str(self))
 
     def __str__(self):
         return self.text.text[self.start_offset.offset:self.stop_offset.offset]
@@ -251,6 +262,9 @@ class Text:
     def __str__(self):
         """Convert to string"""
         return self.text
+
+    def __iter__(self):
+        return iter(self.text)
 
     def _repr_html_(self):
         from html import escape
@@ -306,13 +320,26 @@ class Text:
                 raise DataValidationError("Out of bounds: [%d, %d), "
                                           "text length: %d" % (indx.start, indx.stop, len(self.text)))
 
-            start_offset = self._offsets.setdefault(start, Offset(indx.start))
-            stop_offset = self._offsets.setdefault(stop, Offset(indx.stop))
+            start_offset = self._offsets.setdefault(start, Offset(start))
+            stop_offset = self._offsets.setdefault(stop, Offset(stop))
             return TextSpan(self, start_offset, stop_offset)
         elif isinstance(indx, tuple) and len(indx) == 2:
-            start_offset = self._offsets.setdefault(int(indx[0]), Offset(int(indx[0])))
-            stop_offset = self._offsets.setdefault(int(indx[1]), Offset(int(indx[1])))
+            start = int(indx[0])
+            stop = int(indx[1])
+            if stop < start:
+                raise DataValidationError(
+                    "Negative length is not allowed, stop < start: "
+                    "[%d, %d), text length: %d" % (start, stop, len(self.text)))
+
+            if start < 0 or stop < 0 or start > len(self.text) or stop > len(self.text):
+                raise DataValidationError("Out of bounds: [%d, %d), "
+                                          "text length: %d" % (start, stop, len(self.text)))
+
+            start_offset = self._offsets.setdefault(start, Offset(start))
+            stop_offset = self._offsets.setdefault(stop, Offset(stop))
             return TextSpan(self, start_offset, stop_offset)
+        elif isinstance(indx, int):
+            return self.text[indx]
         else:
             raise ValueError("Unsupported input indx: %s" % repr(indx))
 

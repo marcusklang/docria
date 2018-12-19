@@ -119,15 +119,30 @@ def test_text():
     assert str(main_text[:4]) == "This"
     assert str(main_text[31:]) == "Sweden"
     assert str(main_text[14:21]) == "written"
+    assert str(main_text[14, 21]) == "written"
     assert str(main_text[-4:-2]) == "ed"
     assert str(main_text[:-2]) == "This code was written in Lund, Swed"
+    assert main_text[0] == "T"
+    assert main_text[-1] == "n"
+
+    n = 0
+    output = []
+    for ch in main_text:
+        n += 1
+        output.append(ch)
+
+    assert "".join(output) == str(main_text)
 
     assert str(main_text[14:21][0:2]) == "wr"
     assert str(main_text[14:21][:2]) == "wr"
     assert str(main_text[14:21][2:5]) == "itt"
+    assert str(main_text[14:21][2, 5]) == "itt"
     assert str(main_text[14:21][:-2]) == "writt"
     assert str(main_text[14:21][-2:]) == "en"
     assert str(main_text[14:21][:]) == "written"
+
+    assert main_text[14:21][0] == "w"
+    assert main_text[14:21][-1] == "n"
 
 
 def test_typing():
