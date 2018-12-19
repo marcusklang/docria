@@ -406,6 +406,13 @@ def group_by_span(group_nodes: List[Node],
 
 
 def dominant_right(segments: List[Tuple[int, int, Any]])->List[Any]:
+    """
+    Resolves overlapping segments by using the dominant right rule,
+    i.e. the longest wins and if equal length, the rightmost wins.
+
+    :param segments: tuple of (start, stop, data)
+    :return: list of data
+    """
     segment_list = []
     for tup in segments:
         start, stop, item = tup
@@ -438,5 +445,13 @@ def dominant_right(segments: List[Tuple[int, int, Any]])->List[Any]:
 
 
 def dominant_right_span(nodes: Iterable[Node], spanfield: str="text")->List[Node]:
+    """
+    Resolves overlapping spans by using the dominant right rule,
+    i.e. the longest wins and if equal length, the rightmost wins.
+
+    :param nodes:     nodes to resolve
+    :param spanfield: the name of the spanfield
+    :return: list of nodes
+    """
     segments = [(n[spanfield].start, n[spanfield].stop, n) for n in nodes if spanfield in n]
     return dominant_right(segments)
