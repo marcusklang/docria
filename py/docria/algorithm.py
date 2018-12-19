@@ -437,6 +437,6 @@ def dominant_right(segments: List[Tuple[int, int, Any]])->List[Any]:
     return segment_output
 
 
-def dominant_right_span(nodes: Iterable[Node], spanfield: str)->List[Node]:
+def dominant_right_span(nodes: Iterable[Node], spanfield: str="text")->List[Node]:
     segments = [(n[spanfield].start, n[spanfield].stop, n) for n in nodes if spanfield in n]
     return dominant_right(segments)
