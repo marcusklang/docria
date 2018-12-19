@@ -29,6 +29,10 @@ public class Layer extends AbstractCollection<Node> {
         return schema;
     }
 
+    public static Schema.LayerBuilder create(String name) {
+        return Schema.layer(name);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -96,6 +100,21 @@ public class Layer extends AbstractCollection<Node> {
         }
 
         return this;
+    }
+
+    @Override
+    public boolean isEmpty() {
+        return size == 0;
+    }
+
+    @Override
+    public void clear() {
+        for (Node node : storage) {
+            node.layer = null;
+            node.id = -1;
+        }
+        storage.clear();
+        this.size = 0;
     }
 
     @Override
