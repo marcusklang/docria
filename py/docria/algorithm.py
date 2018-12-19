@@ -315,8 +315,14 @@ def group_by_span(group_nodes: List[Node],
     for group_node in group_nodes:
         if group_span_field in group_node:
             span = group_node[group_span_field]  # type: TextSpan
-            node_list.append(((span.start, 0), (None, group_node)))
-            node_list.append(((span.stop, -2), (None, group_node)))
+
+            if span.start == span.stop:
+                # singleton
+                node_list.append(((span.start, 3), (None, group_node)))
+                node_list.append(((span.stop,  4), (None, group_node)))
+            else:
+                node_list.append(((span.start, 0), (None, group_node)))
+                node_list.append(((span.stop, -2), (None, group_node)))
 
     for layer_name, layer in layer_nodes.items():
         span_name = layer_span_field.get(layer_name)
@@ -325,8 +331,14 @@ def group_by_span(group_nodes: List[Node],
         for layer_node in layer:
             if span_name in layer_node:
                 span = layer_node[span_name]  # type: TextSpan
-                node_list.append(((span.start, 1), (layer_name, layer_node)))
-                node_list.append(((span.stop, -1), (layer_name, layer_node)))
+
+                if span.start == span.stop:
+                    # singleton
+                    node_list.append(((span.start, 3), (layer_name, layer_node)))
+                    node_list.append(((span.stop,  4), (layer_name, layer_node)))
+                else:
+                    node_list.append(((span.start, 1), (layer_name, layer_node)))
+                    node_list.append(((span.stop, -1), (layer_name, layer_node)))
 
     # 2. Sort by start, stop
     node_list.sort(key=lambda tup: tup[0])
@@ -348,7 +360,7 @@ def group_by_span(group_nodes: List[Node],
     k = 0
     while k < len(node_list_groups):
         nodes = node_list_groups[k]
-        if nodes[0][0][1] >= 0:
+        if 0 <= nodes[0][0][1] < 4:
             # Group start
             for _, (layer, node) in nodes:
                 if layer is not None:

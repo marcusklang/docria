@@ -46,18 +46,20 @@ def test_group_by():
     tokens.add(id=4, span=raw_text[8:11])
     tokens.add(id=5, span=raw_text[11:12])
     tokens.add(id=6, span=raw_text[14:15])
+    tokens.add(id=7, span=raw_text[17:17])
 
-    anchors.add(id=7, mention=raw_text[0:6])  # tests [start_match, stop_match]
-    anchors.add(id=8, mention=raw_text[1:6])  # tests [start_intersect, stop_cover]
-    anchors.add(id=9, mention=raw_text[2:6])
-    anchors.add(id=10, mention=raw_text[4:10])
-    anchors.add(id=11, mention=raw_text[4:12])
-    anchors.add(id=12, mention=raw_text[8:11])
-    anchors.add(id=13, mention=raw_text[16:18])
+    anchors.add(id=8, mention=raw_text[0:6])  # tests [start_match, stop_match]
+    anchors.add(id=9, mention=raw_text[1:6])  # tests [start_intersect, stop_cover]
+    anchors.add(id=10, mention=raw_text[2:6])
+    anchors.add(id=11, mention=raw_text[4:10])
+    anchors.add(id=12, mention=raw_text[4:12])
+    anchors.add(id=13, mention=raw_text[8:11])
+    anchors.add(id=14, mention=raw_text[16:18])
+    anchors.add(id=15, mention=raw_text[20:20])
 
-    entities.add(id=14, entity=raw_text[4:6])
-    entities.add(id=15, entity=raw_text[8:12])
-    entities.add(id=16, entity=raw_text[0:15])
+    entities.add(id=16, entity=raw_text[4:6])
+    entities.add(id=17, entity=raw_text[8:12])
+    entities.add(id=18, entity=raw_text[0:15])
 
     groups = group_by_span(anchors,
                            layer_nodes={"tokens": tokens, "entity": entities},
@@ -66,13 +68,14 @@ def test_group_by():
 
     id2group = {n["id"]: g for n, g in groups}
 
-    assert set([tok["id"] for tok in id2group[7]["tokens"]]) == {1, 2, 3}
     assert set([tok["id"] for tok in id2group[8]["tokens"]]) == {1, 2, 3}
-    assert set([tok["id"] for tok in id2group[9]["tokens"]]) == {2, 3}
-    assert set([tok["id"] for tok in id2group[10]["tokens"]]) == {2, 3, 4}
-    assert set([tok["id"] for tok in id2group[11]["tokens"]]) == {2, 3, 4, 5}
-    assert set([tok["id"] for tok in id2group[12]["tokens"]]) == {4}
-    assert set([tok["id"] for tok in id2group[13]["tokens"]]) == set()
+    assert set([tok["id"] for tok in id2group[9]["tokens"]]) == {1, 2, 3}
+    assert set([tok["id"] for tok in id2group[10]["tokens"]]) == {2, 3}
+    assert set([tok["id"] for tok in id2group[11]["tokens"]]) == {2, 3, 4}
+    assert set([tok["id"] for tok in id2group[12]["tokens"]]) == {2, 3, 4, 5}
+    assert set([tok["id"] for tok in id2group[13]["tokens"]]) == {4}
+    assert set([tok["id"] for tok in id2group[14]["tokens"]]) == {7}
+    assert set([tok["id"] for tok in id2group[15]["tokens"]]) == set()
 
     groups = group_by_span(anchors,
                            resolution="cover",
@@ -83,10 +86,11 @@ def test_group_by():
 
     id2group = {n["id"]: g for n, g in groups}
 
-    assert set([tok["id"] for tok in id2group[7]["tokens"]]) == {1, 2, 3}
-    assert set([tok["id"] for tok in id2group[8]["tokens"]]) == {2, 3}
+    assert set([tok["id"] for tok in id2group[8]["tokens"]]) == {1, 2, 3}
     assert set([tok["id"] for tok in id2group[9]["tokens"]]) == {2, 3}
-    assert set([tok["id"] for tok in id2group[10]["tokens"]]) == {3}
-    assert set([tok["id"] for tok in id2group[11]["tokens"]]) == {3, 4, 5}
-    assert set([tok["id"] for tok in id2group[12]["tokens"]]) == {4}
-    assert 13 not in id2group
+    assert set([tok["id"] for tok in id2group[10]["tokens"]]) == {2, 3}
+    assert set([tok["id"] for tok in id2group[11]["tokens"]]) == {3}
+    assert set([tok["id"] for tok in id2group[12]["tokens"]]) == {3, 4, 5}
+    assert set([tok["id"] for tok in id2group[13]["tokens"]]) == {4}
+    assert set([tok["id"] for tok in id2group[14]["tokens"]]) == {7}
+    assert 15 not in id2group
