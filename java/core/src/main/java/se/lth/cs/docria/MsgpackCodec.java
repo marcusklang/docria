@@ -373,6 +373,8 @@ public class MsgpackCodec {
 
     public static MessageBuffer encode(Document document) {
         try {
+            document.validateSchema();
+
             MessageBufferPacker packer = MessagePack.newDefaultBufferPacker();
             Document.Compiled compiled = document.compile();
 

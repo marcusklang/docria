@@ -71,6 +71,14 @@ public class Span extends Value implements CharSequence, Comparable<Span> {
         return this;
     }
 
+    public boolean intersects(Span span) {
+        return  this.start() <= span.stop() && this.stop() >= span.start() ;
+    }
+
+    public boolean covers(Span span) {
+        return span.start() >= this.start() && span.stop() <= this.stop();
+    }
+
     @Override
     public void visit(ValueVisitor visitor) {
         visitor.accept(this);

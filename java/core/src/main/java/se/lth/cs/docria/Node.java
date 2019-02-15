@@ -19,6 +19,7 @@ import se.lth.cs.docria.values.NullValue;
 import se.lth.cs.docria.values.Values;
 
 import java.util.List;
+import java.util.Map;
 import java.util.TreeMap;
 import java.util.function.BiConsumer;
 
@@ -159,8 +160,20 @@ public class Node extends Value {
 
     @Override
     public String toString() {
-        //TODO: Implement!
-        return super.toString();
+        StringBuilder sb = new StringBuilder();
+        sb.append("Node[").append(layer != null ? layer.name() : "???").append("](");
+
+        boolean first = true;
+        for (Map.Entry<String, Value> stringValueEntry : data.entrySet()) {
+            if(first) {
+                first = false;
+            } else {
+                sb.append(", ");
+            }
+            sb.append(stringValueEntry.getKey()).append(" = ").append(stringValueEntry.getValue());
+        }
+        sb.append(")");
+        return sb.toString();
     }
 
     public Node put(String field, Value value) {
@@ -168,57 +181,76 @@ public class Node extends Value {
         return this;
     }
 
-    public Node put(String field, int value) {
+    public final Node put(final String field, int value) {
         return put(field, Values.get(value));
     }
 
-    public Node put(String field, long value) {
+    public final Node put(final String field, long value) {
         return put(field, Values.get(value));
     }
 
-    public Node put(String field, double value) {
-
+    public final Node put(final String field, double value) {
         return put(field, Values.get(value));
     }
 
-    public Node put(String field, byte[] value) {
+    public final Node put(final String field, byte[] value) {
         return put(field, Values.get(value));
     }
 
-    public Node put(String field, Node value) {
+    public final Node put(final String field, Node value) {
         return put(field, Values.get(value));
     }
 
-    public Node put(String field, Node[] nodes) {
+    public final Node put(final String field, Node[] nodes) {
         return put(field, Values.get(nodes));
     }
 
-    public Node put(String field, List<Node> nodes) {
+    public final Node put(final String field, List<Node> nodes) {
         return put(field, Values.get(nodes));
     }
 
-    public Node put(String field, String value) {
+    public final Node put(final String field, String value) {
         return put(field, Values.get(value));
     }
 
-    public Node put(String field, Span value) {
+    public final Node put(final String field, Span value) {
         return put(field, Values.get(value));
     }
 
-    public Node put(String field, boolean value) {
+    public final Node put(final String field, boolean value) {
         return put(field, Values.get(value));
     }
 
-    public boolean has(String field) {
+    public boolean has(final String field) {
         return data.containsKey(field);
     }
 
-    public void remove(String field) {
+    public void remove(final String field) {
         data.remove(field);
     }
 
-    public Value get(String field) {
+    public Value get(final String field) {
         return data.getOrDefault(field, NullValue.INSTANCE);
+    }
+
+    public final String stringValue(final String field) {
+        return get(field).stringValue();
+    }
+
+    public final int intValue(final String field) {
+        return get(field).intValue();
+    }
+
+    public final long longValue(final String field) {
+        return get(field).longValue();
+    }
+
+    public final double doubleValue(final String field) {
+        return get(field).doubleValue();
+    }
+
+    public final boolean boolValue(final String field) {
+        return get(field).boolValue();
     }
 
     public Value get(String field, Value defaultValue) {

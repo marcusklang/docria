@@ -48,7 +48,7 @@ public class NodeArrayValue extends Value {
     }
 
     public NodeArrayValue(List<? extends Node> nodes) {
-        this.nodes = nodes.toArray(new Node[nodes.size()]);
+        this.nodes = nodes.toArray(new Node[0]);
     }
 
     @Override

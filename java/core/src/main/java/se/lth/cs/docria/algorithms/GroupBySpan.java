@@ -38,6 +38,14 @@ public class GroupBySpan {
         return builder(groups, "text");
     }
 
+    public static Builder builder(Document doc, String grouplayer) {
+        return builder(doc.layer(grouplayer), "text");
+    }
+
+    public static Builder builder(Document doc, String grouplayer, String spanfield) {
+        return builder(doc.layer(grouplayer), spanfield);
+    }
+
     public static Builder builder(Layer groups, String spanfield) {
         DataType fieldType = groups.schema().getFieldType(spanfield);
         if(fieldType == null) {
@@ -85,7 +93,6 @@ public class GroupBySpan {
     }
 
     public static class Builder {
-        private Document document;
         private List<Node> groups;
         private String groupSpanField;
 
@@ -99,10 +106,34 @@ public class GroupBySpan {
             this.groupSpanField = groupSpanField;
         }
 
-        public Builder group(String layer, List<Node> nodes, String spanfield) {
-            layers.put(layer, nodes);
-            layerSpanfield.put(layer, spanfield);
+        public Builder group(String name, List<Node> nodes) {
+            return group(name, nodes, "text");
+        }
+
+        public Builder group(String name, List<Node> nodes, String spanfield) {
+            layers.put(name, nodes);
+            layerSpanfield.put(name, spanfield);
             return this;
+        }
+
+        public Builder group(Document doc, String layer) {
+            return this.group(layer, doc.layer(layer));
+        }
+
+        public Builder group(Document doc, String layer, String spanfield) {
+            return this.group(layer, doc.layer(layer), spanfield);
+        }
+
+        public Builder group(Layer layer) {
+            return this.group(layer.name(), layer);
+        }
+
+        public Builder group(Layer layer, String spanfield) {
+            return this.group(layer.name(), layer, spanfield);
+        }
+
+        public Builder group(String name, Layer layer) {
+            return group(name, layer, "text");
         }
 
         public Builder group(String name, Layer layer, String spanfield) {
@@ -115,18 +146,6 @@ public class GroupBySpan {
             }
 
             return group(name, new ArrayList<>(layer), spanfield);
-        }
-
-        public Builder group(String name, Layer layer) {
-            return group(name, layer, "text");
-        }
-
-        public Builder group(Layer layer) {
-            return this.group(layer.name(), layer);
-        }
-
-        public Builder group(Layer layer, String spanfield) {
-            return this.group(layer.name(), layer, spanfield);
         }
 
         public Builder resolution(Resolution resolution) {

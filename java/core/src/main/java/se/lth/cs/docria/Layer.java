@@ -102,6 +102,17 @@ public class Layer extends AbstractCollection<Node> {
         return this;
     }
 
+    /**
+     * Sorts nodes in this layer by the given comparator, compacts the collection pre sorting.
+     * @param comparator the comparator to use for sorting
+     * @return this instance
+     */
+    public Layer sortWithin(Comparator<Node> comparator) {
+        compact();
+        storage.subList(0, size).sort(comparator);
+        return this;
+    }
+
     @Override
     public boolean isEmpty() {
         return size == 0;
@@ -126,8 +137,16 @@ public class Layer extends AbstractCollection<Node> {
 
         node.id = storage.size();
         node.layer = this;
-        this.size++;
-        return storage.add(node);
+        if(this.size < storage.size()) {
+            storage.set(this.size, node);
+            this.size++;
+            return true;
+        }
+        else
+        {
+            this.size++;
+            return storage.add(node);
+        }
     }
 
     @Override
@@ -148,6 +167,59 @@ public class Layer extends AbstractCollection<Node> {
             compact();
 
         return n;
+    }
+
+    @Override
+    public boolean contains(Object o) {
+        if(!(o instanceof Node))
+            return false;
+
+        Node n = (Node)o;
+        return n.layer == this;
+    }
+
+    @Override
+    public boolean retainAll(Collection<?> c) {
+        boolean edited = false;
+        for (Object o : c) {
+            if(!(o instanceof Node))
+                throw new IllegalArgumentException("Collection must only contain nodes!");
+
+            Node n = (Node)o;
+            if(n.layer != this)
+                throw new IllegalArgumentException(String.format("Collection must only contain nodes bound to this layer: %s", name()));
+
+            n.id = -n.id;
+            edited = true;
+        }
+
+        if(edited) {
+            for (int i = 0; i < this.storage.size(); i++) {
+                Node node = this.storage.get(i);
+                if (node != null) {
+                    if (node.id >= 0) {
+                        this.storage.set(i, null);
+                        this.size--;
+                    } else {
+                        node.id = -node.id;
+                    }
+                }
+            }
+
+            if (this.size < 0.75 * storage.size() && storage.size() > 16)
+                compact();
+        }
+
+        return edited;
+    }
+
+    @Override
+    public boolean removeAll(Collection<?> c) {
+        boolean ops = false;
+        for (Object o : c) {
+            ops |= this.remove(o);
+        }
+        return ops;
     }
 
     @Override
@@ -172,8 +244,6 @@ public class Layer extends AbstractCollection<Node> {
     }
 
     public void compact() {
-        //TODO: Shrink capacity as needed
-
         int i = 0;
         for (int k = 0; k < storage.size(); k++) {
             if(storage.get(k) != null) {
@@ -186,6 +256,10 @@ public class Layer extends AbstractCollection<Node> {
         for(int k = size; k < storage.size(); k++) {
             storage.set(k, null);
         }
+
+        // Shrink to size
+        if(this.size < 0.75 * storage.size() && storage.size() > 16)
+            storage = new ArrayList<>(storage.subList(0, this.size));
     }
 
     @Override

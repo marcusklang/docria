@@ -251,6 +251,42 @@ public class Document {
     }
 
     /**
+     * Validates schema by throwing an DataInconsitencyException if the schema is invalid.
+     * @throws DataInconsistencyException thrown when schema is invalid.
+     */
+    public void validateSchema() {
+        for (Layer value : this.layers.values()) {
+            for (Map.Entry<String, DataType> field : value.schema().fields().entrySet()) {
+                switch (field.getValue().name()) {
+                    case SPAN:
+                        if(!this.texts.containsKey(field.getValue().args().get("context").stringValue())) {
+                            throw new DataInconsistencyException(
+                                    String.format("Field '%s' in layer '%s' is referring " +
+                                                          "to the text layer '%s' which cannot be found.",
+                                                  field.getKey(),
+                                                  value.name(),
+                                                  field.getValue().args().get("context")));
+                        }
+                        break;
+                    case NODE:
+                    case NODE_ARRAY:
+                        if(!this.layers.containsKey(field.getValue().args().get("layer").stringValue())) {
+                            throw new DataInconsistencyException(
+                                    String.format("Field '%s' in layer '%s' is referring " +
+                                                          "to the node layer '%s' which cannot be found.",
+                                                  field.getKey(),
+                                                  value.name(),
+                                                  field.getValue().args().get("layer")));
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+    }
+
+    /**
      * For internal use: Compacts all layers and offsets in texts, used to prepare for serialization.
      */
     public Compiled compile() {
