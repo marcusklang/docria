@@ -16,6 +16,7 @@
 package se.lth.cs.docria;
 
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 public class Layer extends AbstractCollection<Node> {
@@ -260,6 +261,11 @@ public class Layer extends AbstractCollection<Node> {
         // Shrink to size
         if(this.size < 0.75 * storage.size() && storage.size() > 16)
             storage = new ArrayList<>(storage.subList(0, this.size));
+    }
+
+    @Override
+    public void forEach(Consumer<? super Node> action) {
+        this.storage.forEach(n -> {if(n != null) action.accept(n); });
     }
 
     @Override
