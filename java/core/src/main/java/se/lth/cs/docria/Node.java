@@ -233,23 +233,23 @@ public class Node extends Value {
         return data.getOrDefault(field, NullValue.INSTANCE);
     }
 
-    public final String stringValue(final String field) {
+    public final String getString(final String field) {
         return get(field).stringValue();
     }
 
-    public final int intValue(final String field) {
+    public final int getInt(final String field) {
         return get(field).intValue();
     }
 
-    public final long longValue(final String field) {
+    public final long getLong(final String field) {
         return get(field).longValue();
     }
 
-    public final double doubleValue(final String field) {
+    public final double getDouble(final String field) {
         return get(field).doubleValue();
     }
 
-    public final boolean boolValue(final String field) {
+    public final boolean getBool(final String field) {
         return get(field).boolValue();
     }
 

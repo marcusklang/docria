@@ -131,6 +131,7 @@ public class Layer extends AbstractCollection<Node> {
 
     @Override
     public boolean add(Node node) {
+        Objects.requireNonNull(node);
         // TODO: In case of specific node factory, convert/verify incoming type
 
         if(node.layer != null)
@@ -156,6 +157,7 @@ public class Layer extends AbstractCollection<Node> {
     }
 
     public Node remove(Node n) {
+        Objects.requireNonNull(n);
         if(n.layer != this) {
             throw new IllegalStateException("node is not associated with this layer.");
         }
@@ -181,6 +183,8 @@ public class Layer extends AbstractCollection<Node> {
 
     @Override
     public boolean retainAll(Collection<?> c) {
+        Objects.requireNonNull(c);
+
         boolean edited = false;
         for (Object o : c) {
             if(!(o instanceof Node))
@@ -265,6 +269,7 @@ public class Layer extends AbstractCollection<Node> {
 
     @Override
     public void forEach(Consumer<? super Node> action) {
+        Objects.requireNonNull(action);
         this.storage.forEach(n -> {if(n != null) action.accept(n); });
     }
 
