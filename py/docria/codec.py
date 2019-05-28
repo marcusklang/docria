@@ -450,7 +450,6 @@ class MsgpackCodec:
 
                 print(" ==> %s" % next(unpacker))
 
-
     @staticmethod
     def encode(doc, **kwargs):
         """

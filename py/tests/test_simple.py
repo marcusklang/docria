@@ -46,6 +46,55 @@ def test_primary():
     return doc
 
 
+def create_doc():
+    """Test basic layer creation and node creation."""
+    # Stupid tokenizer
+    tokenizer = re.compile(r"[a-zA-Z]+|[0-9]+|[^\s]")
+
+    doc = Document()
+    main_text = doc.add_text("main", "This code was written in Lund, Sweden.")
+    #                                 01234567890123456789012345678901234567
+    #                                 0         1         2         3
+
+    token = doc.add_layer("token", text=main_text.spantype)
+    for m in tokenizer.finditer(str(main_text)):
+        token.add(text=main_text[m.start():m.end()])
+
+    named_entity = doc.add_layer("named_entity", text=main_text.spantype, cls=T.string)
+    named_entity.add(text=main_text[25:29], cls="GPE")
+    named_entity.add(text=main_text[31:37], cls="GPE")
+
+    return doc
+
+
+def test_retain():
+    doc = create_doc()
+
+    tokens = doc["token"][[1, 5, 7]]  # Directly accessing nodes by IDs, is only reliable with a compacted layer.
+    assert str(tokens[0]["text"]) == "code"
+    assert str(tokens[1]["text"]) == "Lund"
+    assert str(tokens[2]["text"]) == "Sweden"
+
+    doc["token"].retain(tokens)
+
+    assert "code Lund Sweden" == " ".join(map(lambda n: str(n["text"]), doc["token"]))
+    assert len(doc["token"]) == 3
+
+
+def test_remove():
+    doc = create_doc()
+    doc["token"].remove(doc["token"][1])
+    assert "This was written in Lund , Sweden ." == " ".join(map(lambda n: str(n["text"]), doc["token"]))
+
+    toks = doc["token"].to_list()
+
+    doc["token"].remove(toks[[0, 1, 2]])
+    assert "in Lund , Sweden ." == " ".join(map(lambda n: str(n["text"]), doc["token"]))
+
+    doc["token"].remove(toks[-1])
+    assert "in Lund , Sweden" == " ".join(map(lambda n: str(n["text"]), doc["token"]))
+
+
 def test_primary_msgpack():
     """Test basic layer creation and node creation with msgpack serialization roundtrip"""
     doc = MsgpackCodec.decode(MsgpackCodec.encode(test_primary()))

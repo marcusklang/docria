@@ -118,6 +118,13 @@ class NodeList(list):
     def __iter__(self)->Iterator[Node]:
         return super().__iter__()
 
+    def __getitem__(self, item):
+        getter = super().__getitem__
+        if isinstance(item, list):
+            return [getter(indx) for indx in iter(item)]
+        else:
+            return getter(item)
+
     def _table_repr_(self):
         fields = set()
 
@@ -373,6 +380,7 @@ class TEnum(Enum):
     SPAN = 9
     EXT = 10
 
+
 # String conversion of enum.
 DataType2String = {
     TEnum.I32: "i32",
@@ -597,7 +605,12 @@ class NodeLayerCollection:
 
     def add(self, *args, **kwargs) -> Node:
         """
-        Add node to this layer
+        Add node to this layer.
+
+        Example:
+          layer.add(field1="Data", field2=42, field3=text[0:12])
+          layer.add(node1, node2)
+          layer.add(*nodes)
 
         :param args: Node objects, if used then kwargs are ignored
         :param kwargs: create nodes from given properties, ignored if len(args) > 0
@@ -621,6 +634,15 @@ class NodeLayerCollection:
             return node
 
     def add_many(self, nodes):
+        """
+        Add many nodes
+
+        :param nodes: list of node references to add
+        """
+        for n in nodes:
+            if n.collection is not None:
+                raise DataValidationError("Node in list is already bound to a collection: %s" % repr(n.collection))
+
         num_nodes = self.num
         for idval, node in zip(range(num_nodes, num_nodes+len(nodes)), nodes):
             node._id = idval
@@ -630,6 +652,11 @@ class NodeLayerCollection:
         self._nodes.extend(nodes)
 
     def compact(self):
+        """
+        Compact this layer to have no gaps.
+
+        All node references will be stored sequentially in memory.
+        """
         if len(self._nodes) == self.num:
             # No compacting needed.
             return
@@ -645,35 +672,89 @@ class NodeLayerCollection:
         del self._nodes[i:]
 
     def sort(self, keyfn):
+        """
+        Sort the nodes, rearrange the node reference order by the given key function
+
+        :param keyfn: a function which takes the node as input and returns the key to sort by.
+        """
         self.compact()
         self._nodes.sort(key=keyfn)
         for i, n in zip(range(len(self)),self):
             n._id = i
 
-    def remove(self, node: "Node"):
-        if node.collection is not self:
-            raise ValueError("Node %s is not in this node collection %s" % (repr(node), self.name))
+    def remove(self, node: Union["Node", Iterable["Node"]]):
+        """
+        Remove nodes
 
-        self._nodes[node._id] = None
-        self.num -= 1
+        :param node: the node or list of nodes to remove
+        """
+        if isinstance(node, Node):
+            if node.collection is not self:
+                raise ValueError("Node %s is not in this node collection %s" % (repr(node), self.name))
+
+            self._nodes[node._id] = None
+            self.num -= 1
+            node.collection = None
+        else:
+            # Attempt to get an iterable from input
+            try:
+                for n in iter(node):
+                    if isinstance(n, Node):
+                        if n.collection is not self:
+                            raise ValueError("Node %s is not in this node collection %s" % (repr(node), self.name))
+
+                        self._nodes[n._id] = None
+                        self.num -= 1
+                        n.collection = None
+                    elif n is None:
+                        pass
+                    else:
+                        raise ValueError("Unsupported object was requested to be "
+                                         "removed from this collection: %s " % (repr(n)))
+
+            except TypeError:
+                raise ValueError(
+                    "Unsupported object was requested to be removed from this collection: %s " % (repr(node)))
 
         if 0.75*len(self._nodes) > self.num and len(self._nodes) > 16:
             self.compact()
-        
-        node.collection = None
+
+    def retain(self, nodes: Iterable["Node"]):
+        """Remove all nodes not in the given list nodes"""
+
+        try:
+            for n in iter(nodes):
+                # Mark the nodes to retain
+                if n.collection is not self:
+                    raise ValueError("Node %s is not in this node collection %s" % (repr(n), self.name))
+
+                # Guards against duplicated node entry in nodes
+                if n._id >= 0:
+                    n._id = -n._id
+
+        except TypeError:
+            raise ValueError("Given nodes is not iterable.")
+
+        # Compact and remove unmarked nodes
+        k = 0
+        for i in range(len(self._nodes)):
+            n = self._nodes[i]
+            if n._id >= 0:
+                n.collection = None
+                self.num -= 1
+            else:
+                self._nodes[k] = n
+                n._id = k
+                k += 1
+
+        # Compact list
+        del self._nodes[k:]
 
     def __iter__(self)->Iterator[Node]:
         if self.num == len(self._nodes):
             return iter(self._nodes)
         else:
-            def valueiter():
-                for node in self._nodes:
-                    if node is None:
-                        continue
-
-                    yield node
-
-            return valueiter()
+            return filter(None.__ne__, self._nodes)
 
     def __repr__(self):
         return "Layer(%s, N=%d)" % (self.name, self.num)
@@ -713,41 +794,54 @@ class NodeLayerCollection:
                 return item
             else:
                 raise DataValidationError("Node is not part of this node collection '%s': %s" % (self.name, repr(item)))
-        elif isinstance(item, list):
-            if len(item) == 0:
-                return []
-            elif isinstance(item[0], int):
-                return NodeList(self._nodes[n] for n in item)
-            else:
-                raise ValueError("Unsupported indexing type: %s" % repr(type(item)))
         elif isinstance(item, slice):
-            return NodeList(n for n in self._nodes[item] if n is not None)
-        else:
-            try:
-                output = []
-                for n in iter(item):
-                    output.append(self[n])
-
-                return NodeList(output)
-            except TypeError:
-                pass
-
+            return NodeList(n for n in filter(None.__ne__, self._nodes[item]))
+        elif isinstance(item, str):
             raise ValueError("Unsupported indexing type: %s" % repr(type(item)))
-
-    def __delitem__(self, key):
-        if isinstance(key, Node):
-            self.remove(key)
-        elif isinstance(key, int):
-            n = self._nodes[key]
-            self.remove(n)
         else:
             try:
-                for n in iter(key):
-                    del self[n]
+                return NodeList(self[n] for n in iter(item))
             except TypeError:
-                pass
+                raise ValueError("Unsupported indexing type: %s" % repr(type(item)))
 
-            raise ValueError("Do not know how to remove: %s" % repr(key))
+    def __delitem__(self, node: Union["Node", Iterable["Node"]]):
+        self.remove(node)
+
+    def to_pandas(self, fields: List[str]=None, materialize_spans=False, include_ref_field=True):
+        """
+        Convert this layer to a pandas Dataframe
+
+        Requires Pandas which is not a requirement for Docria.
+
+        :param fields:  which fields to include, by default all fields are included.
+        :param materialize_spans: converts span fields to a materialized string
+        :param include_ref_field: include the python node reference as __ref field in the dataframe.
+        :return: pandas.Dataframe with the contents of this layer
+        """
+        from pandas import DataFrame
+
+        if fields is None:
+            fields = self.schema.fields.items()
+        else:
+            fields = [(field, self.schema.fields[field]) for field in fields]
+
+        if materialize_spans:
+            data = {}
+            for field, fieldtype in fields:
+                if fieldtype.typename == TEnum.SPAN:
+                    data[field] = [(str(n[field]) if field in n else None) for n in filter(None.__ne__, self._nodes)]
+                else:
+                    data[field] = [n.get(field) for n in filter(None.__ne__, self._nodes)]
+        else:
+            data = {k: [n.get(k) for n in filter(None.__ne__, self._nodes)] for k, v in fields}
+
+        if include_ref_field:
+            data["__ref"] = list(filter(None.__ne__, self._nodes))
+
+        return DataFrame(data=data)
+
+    def to_list(self)->NodeList:
+        return NodeList(n for n in self._nodes if n is not None)
 
     def __contains__(self, item: Node):
         return item.collection is self
