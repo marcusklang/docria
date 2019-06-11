@@ -226,6 +226,15 @@ class NodeCollection(Sized):
                         "Field %s, with value %s is not valid in node: %s" % \
                         (field, repr(n[field]), repr(n))
 
+    def first(self):
+        return next(iter(self), None)
+
+    def last(self):
+        last = None
+        for n in self:
+            last = n
+        return last
+
     def _repr_html_(self):
         return self._table_repr_().render_html()
 
@@ -409,6 +418,12 @@ class NodeSpan(NodeCollection):
         right_span = self.right[field]  # type: TextSpan
         return left_span.span_to(right_span)
 
+    def first(self):
+        return self.left
+
+    def last(self):
+        return self.right
+
     def _repr_html_(self):
         return self._table_repr_(title="Node span with N=%d elements").render_html()
 
@@ -460,7 +475,7 @@ class NodeList(list, NodeCollection):
                 if len(dtypes) > 1:
                     if len(set(map(lambda dtype: dtype.typename, dtypes))) == 1:
                         # Exactly the same type
-                        output_types[fld] = next(dtypes)
+                        output_types[fld] = next(iter(dtypes))
                     else:
                         resolved_type = None  # type: Optional[DataType]
                         for el in dtypes:
@@ -472,6 +487,8 @@ class NodeList(list, NodeCollection):
                                                  (repr(resolved_type), repr(el), fld, repr(self)))
                             else:
                                 resolved_type = resolved_type.cast_up(el)
+                else:
+                    output_types[fld] = next(iter(dtypes))
 
             NodeCollection.__init__(self, output_types)
         else:
@@ -491,6 +508,18 @@ class NodeList(list, NodeCollection):
             return NodeList(iter(getter(self, int(indx)) for indx in item), fieldtypes=self.fieldtypes)
         else:
             return NodeCollection.__getitem__(self, item)
+
+    def first(self):
+        if len(self) > 0:
+            return list.__getitem__(self, 0)
+        else:
+            return None
+
+    def last(self):
+        if len(self) > 0:
+            return list.__getitem__(self, -1)
+        else:
+            return None
 
     def __repr__(self):
         return repr(super())
@@ -1204,7 +1233,8 @@ class NodeLayerSchema:
 
 class NodeCollectionQuery(NodeCollection):
     """Represents a query to document data"""
-    def __init__(self, collection, predicate):
+    def __init__(self, collection: "NodeCollection", predicate: Callable[["Node"], bool]):
+        NodeCollection.__init__(self, fieldtypes=collection.fieldtypes)
         self.collection = collection
         self.predicate = predicate
         self.result = [n for n in collection if predicate(n)]
@@ -1228,26 +1258,11 @@ class NodeCollectionQuery(NodeCollection):
     def __repr__(self):
         return "NodeCollectionQuery(collection=%s, N=%d)" % (self.collection.name, len(self))
 
-    def _table_repr_(self):
-        from docria.printout import Table, TableRow, get_representation
-
-        cols = list(sorted(self.collection.schema.fields.keys()))
-        fields = list(sorted(self.collection.schema.fields.keys()))
-
-        table = Table(caption="Layer query for %s" % self.collection.name)
-        table.set_header(*cols)
-
-        for n in self.collection[self]:
-            fld_data = [n.get(fld, None) for fld in fields]
-            for i in range(len(fld_data)):
-                fld_data[i] = get_representation(fld_data[i])
-
-            table.add_body(TableRow(*fld_data, index="#%d" % n._id))
-
-        return table
-
     def _repr_html_(self):
-        return self._table_repr_().render_html()
+        return self._table_repr_("Query with %d nodes.").render_html()
+
+    def __str__(self):
+        return self._table_repr_("Query with %d nodes.").render_text()
 
 
 class NodeLayerCollection(NodeCollection):
@@ -1631,6 +1646,12 @@ class NodeLayerCollection(NodeCollection):
 
     def __delitem__(self, node: Union["Node", Iterable["Node"]]):
         self.remove(node)
+
+    def first(self):
+        return next(filter(None.__ne__, self._nodes), None)
+
+    def last(self):
+        return next(filter(None.__ne__, map(self._nodes.__getitem__, range(len(self._nodes)-1, -1, -1))), None)
 
     def to_pandas(self, fields: List[str]=None, materialize_spans=False, include_ref_field=True):
         """
