@@ -165,6 +165,17 @@ public class MsgpackCodec {
                 throw new IOError(e);
             }
         }
+
+        @Override
+        public void accept(NodeSpan value) {
+            try {
+                packer.packArrayHeader(2);
+                packer.packInt(value.left.id);
+                packer.packInt(value.right.id-value.left.id);
+            } catch(IOException e) {
+                throw new IOError(e);
+            }
+        }
     }
 
     private static class SchemaArgWriter implements ValueVisitor {
@@ -601,11 +612,31 @@ public class MsgpackCodec {
         return text2offsets;
     }
 
-    public static class NodeArrayPlaceholder extends Value {
+    protected static class NodeArrayPlaceholder extends Value {
         private int[] nodeIds;
 
         public NodeArrayPlaceholder(int[] nodeIds) {
             this.nodeIds = nodeIds;
+        }
+
+        @Override
+        public String stringValue() {
+            return null;
+        }
+
+        @Override
+        public DataType type() {
+            throw new UnsupportedOperationException();
+        }
+    }
+
+    protected static class NodeSpanPlaceholder extends Value {
+        private int left;
+        private int right;
+
+        public NodeSpanPlaceholder(int left, int right) {
+            this.left = left;
+            this.right = right;
         }
 
         @Override
@@ -639,6 +670,7 @@ public class MsgpackCodec {
 
             switch (fieldType.name()) {
                 case INT:
+                case NODE: //Serialized, only ints are used to reference nodes.
                     for (int k = 0; k < numNodes; k++) {
                         if(!unpacker.tryUnpackNil()) {
                             nodes.get(k).put(field, unpacker.unpackInt());
@@ -716,13 +748,6 @@ public class MsgpackCodec {
                         }
                     }
                     break;
-                case NODE:
-                    for (int k = 0; k < numNodes; k++) {
-                        if(!unpacker.tryUnpackNil()) {
-                            nodes.get(k).put(field, unpacker.unpackInt());
-                        }
-                    }
-                    break;
                 case NODE_ARRAY:
                     for (int k = 0; k < numNodes; k++) {
                         if(!unpacker.tryUnpackNil()) {
@@ -736,6 +761,17 @@ public class MsgpackCodec {
                         }
                     }
                     break;
+                case NODE_SPAN:
+                    for (int k = 0; k < numNodes; k++) {
+                        if(!unpacker.tryUnpackNil()) {
+                            assert unpacker.unpackArrayHeader() == 2;
+                            int left = unpacker.unpackInt();
+                            int right = unpacker.unpackInt()+left;
+
+                            nodes.get(k).put(field, new NodeSpanPlaceholder(left, right));
+                        }
+                    }
+                    break;
                 default:
                     throw new UnsupportedOperationException("Field type not yet implemented: " + fieldType.name().getName());
             }
@@ -746,31 +782,50 @@ public class MsgpackCodec {
         Schema.Layer schema = layer.schema();
         for (Map.Entry<String, DataType> entry : schema.fields().entrySet()) {
             String field = entry.getKey();
-            if(entry.getValue().name() == DataTypeName.NODE) {
-                String targetLayerName = entry.getValue().args().get("layer").stringValue();
-                Layer targetLayer = document.layer(targetLayerName);
+            switch (entry.getValue().name()) {
+                case NODE: {
+                    String targetLayerName = entry.getValue().args().get("layer").stringValue();
+                    Layer targetLayer = document.layer(targetLayerName);
 
-                layer.forEach(n -> {
-                    if(n.has(field)) {
-                        int nodeId = n.get(field).intValue();
-                        n.put(field, targetLayer.get(nodeId));
-                    }
-                });
-            } else if(entry.getValue().name() == DataTypeName.NODE_ARRAY) {
-                String targetLayerName = entry.getValue().args().get("layer").stringValue();
-                Layer targetLayer = document.layer(targetLayerName);
-
-                layer.forEach(n -> {
-                    if(n.has(field)) {
-                        int[] nodeIds = ((NodeArrayPlaceholder)n.get(field)).nodeIds;
-                        Node[] nodes = new Node[nodeIds.length];
-                        for (int k = 0; k < nodeIds.length; k++) {
-                            nodes[k] = targetLayer.get(nodeIds[k]);
+                    layer.forEach(n -> {
+                        if (n.has(field)) {
+                            int nodeId = n.get(field).intValue();
+                            n.put(field, targetLayer.get(nodeId));
                         }
+                    });
+                    break;
+                }
+                case NODE_ARRAY: {
+                    String targetLayerName = entry.getValue().args().get("layer").stringValue();
+                    Layer targetLayer = document.layer(targetLayerName);
 
-                        n.put(field, nodes);
-                    }
-                });
+                    layer.forEach(n -> {
+                        if (n.has(field)) {
+                            int[] nodeIds = ((NodeArrayPlaceholder) n.get(field)).nodeIds;
+                            Node[] nodes = new Node[nodeIds.length];
+                            for (int k = 0; k < nodeIds.length; k++) {
+                                nodes[k] = targetLayer.get(nodeIds[k]);
+                            }
+
+                            n.put(field, nodes);
+                        }
+                    });
+                    break;
+                }
+                case NODE_SPAN: {
+                    String targetLayerName = entry.getValue().args().get("layer").stringValue();
+                    Layer targetLayer = document.layer(targetLayerName);
+
+                    layer.forEach(n -> {
+                        if (n.has(field)) {
+                            NodeSpanPlaceholder placeholder = (NodeSpanPlaceholder)n.get(field);
+                            Node left = targetLayer.get(placeholder.left);
+                            Node right = targetLayer.get(placeholder.right);
+                            n.put(field, new NodeSpan(left, right));
+                        }
+                    });
+                    break;
+                }
             }
         }
     }

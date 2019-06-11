@@ -15,22 +15,21 @@
 
 package se.lth.cs.docria;
 
-import jdk.nashorn.internal.runtime.arrays.ArrayIndex;
 import se.lth.cs.docria.values.ValueVisitor;
 
 import java.util.stream.IntStream;
 
 public class Span extends Value implements CharSequence, Comparable<Span> {
-    private Text parent;
+    private Text source;
     private Offset startOffset;
     private Offset stopOffset;
 
-    public Text parent() {
-        return parent;
+    public Text source() {
+        return source;
     }
 
-    public Span(Text parent, Offset startOffset, Offset stopOffset) {
-        this.parent = parent;
+    public Span(Text source, Offset startOffset, Offset stopOffset) {
+        this.source = source;
         this.startOffset = startOffset;
         this.stopOffset = stopOffset;
     }
@@ -42,7 +41,7 @@ public class Span extends Value implements CharSequence, Comparable<Span> {
 
     @Override
     public DataType type() {
-        return parent.spanType();
+        return source.spanType();
     }
 
     public int start() {
@@ -95,7 +94,7 @@ public class Span extends Value implements CharSequence, Comparable<Span> {
             throw new ArrayIndexOutOfBoundsException(
                     String.format("index is outside this span, span = [%d, %d), index = %d", startOffset.offset, stopOffset.offset, index+startOffset.offset));
 
-        return parent.charAt(index + startOffset.offset);
+        return source.charAt(index + startOffset.offset);
     }
 
     @Override
@@ -106,7 +105,7 @@ public class Span extends Value implements CharSequence, Comparable<Span> {
                                   startOffset.offset, stopOffset.offset,
                                   start+startOffset.offset, end+startOffset.offset));
         }
-        return parent.subSequence(start+startOffset.offset, end+startOffset.offset);
+        return source.subSequence(start+startOffset.offset, end+startOffset.offset);
     }
 
     @Override
@@ -116,14 +115,14 @@ public class Span extends Value implements CharSequence, Comparable<Span> {
 
         Span span = (Span) o;
 
-        if (!parent.equals(span.parent)) return false;
+        if (!source.equals(span.source)) return false;
         if (!startOffset.equals(span.startOffset)) return false;
         return stopOffset.equals(span.stopOffset);
     }
 
     @Override
     public int hashCode() {
-        int result = parent.hashCode();
+        int result = source.hashCode();
         result = 31 * result + startOffset.hashCode();
         result = 31 * result + stopOffset.hashCode();
         return result;
@@ -137,16 +136,16 @@ public class Span extends Value implements CharSequence, Comparable<Span> {
 
     @Override
     public IntStream chars() {
-        return parent.subSequence(startOffset.offset, stopOffset.offset).chars();
+        return source.subSequence(startOffset.offset, stopOffset.offset).chars();
     }
 
     @Override
     public IntStream codePoints() {
-        return parent.subSequence(startOffset.offset, stopOffset.offset).codePoints();
+        return source.subSequence(startOffset.offset, stopOffset.offset).codePoints();
     }
 
     @Override
     public String toString() {
-        return parent.subSequence(startOffset.offset, stopOffset.offset).toString();
+        return source.subSequence(startOffset.offset, stopOffset.offset).toString();
     }
 }

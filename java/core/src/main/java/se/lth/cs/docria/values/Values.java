@@ -15,10 +15,7 @@
 
 package se.lth.cs.docria.values;
 
-import se.lth.cs.docria.Document;
-import se.lth.cs.docria.Node;
-import se.lth.cs.docria.Span;
-import se.lth.cs.docria.Value;
+import se.lth.cs.docria.*;
 
 import java.util.HashMap;
 import java.util.List;
@@ -68,6 +65,10 @@ public class Values {
 
     public static Value get(Document value) {
         return new DocumentValue(value);
+    }
+
+    public static Value get(Node left, Node right) {
+        return new NodeSpan(left, right);
     }
 
     public static Value get(Object value) {

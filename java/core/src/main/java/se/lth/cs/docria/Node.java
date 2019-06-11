@@ -56,6 +56,9 @@ public class Node extends Value {
                     throw new IllegalArgumentException("value does not match expected type. Got: " + value.type().toString() + ", Expected: " + fieldType.toString());
                 }
             }
+            else {
+                throw new IllegalArgumentException(String.format("field %s does not exist in schema.", fieldName));
+            }
 
             if(values.containsKey(fieldName)) {
                 throw new IllegalArgumentException("Duplicate entry for " + fieldName);
@@ -97,6 +100,18 @@ public class Node extends Value {
             return put(fieldName, Values.get(value));
         }
 
+        public Node build() {
+            if(!values.isEmpty())
+                instance.setData(values);
+
+            return instance;
+        }
+
+        /**
+         * @deprecated use {@link Layer#add(Node)} in combination with {@link Layer#create()}
+         * @return
+         */
+        @Deprecated
         public Node insert() {
             if(!values.isEmpty())
                 instance.setData(values);
@@ -179,6 +194,15 @@ public class Node extends Value {
     public Node put(String field, Value value) {
         data.put(field, value);
         return this;
+    }
+
+    /**
+     * Validating builder for a node
+     * @param layer the layer to validate against
+     * @return builder
+     */
+    public static Builder builder(Layer layer) {
+        return new Node.Builder(layer, layer.nodeFactory.create());
     }
 
     public final Node put(final String field, int value) {

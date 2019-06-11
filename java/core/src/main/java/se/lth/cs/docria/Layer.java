@@ -15,8 +15,11 @@
 
 package se.lth.cs.docria;
 
+import se.lth.cs.docria.exceptions.DataInconsistencyException;
+
 import java.util.*;
 import java.util.function.Consumer;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 public class Layer extends AbstractCollection<Node> {
@@ -24,14 +27,29 @@ public class Layer extends AbstractCollection<Node> {
     private Schema.Layer schema;
     private ArrayList<Node> storage = new ArrayList<>();
     private int size;
-    private NodeFactory nodeFactory;
+    protected NodeFactory nodeFactory;
 
     public Schema.Layer schema() {
         return schema;
     }
 
-    public static Schema.LayerBuilder create(String name) {
+    /**
+     * Get layer builder
+     * @param name name of layer
+     * @return layer builder
+     */
+    public static Schema.LayerBuilder builder(String name) {
         return Schema.layer(name);
+    }
+
+    /**
+     * @deprecated use {@link #builder(String)}
+     * @param name layer name
+     * @return layer builder
+     */
+    @Deprecated
+    public static Schema.LayerBuilder create(String name) {
+        return builder(name);
     }
 
     @Override
@@ -71,6 +89,11 @@ public class Layer extends AbstractCollection<Node> {
         return (Stream<T>)storage.stream().filter(Objects::nonNull);
     }
 
+    /**
+     * @deprecated use {@link Node#builder(Layer) in combination with {@link Layer#add(Node)}}
+     * @return
+     */
+    @Deprecated
     public Node.Builder create() {
         return new Node.Builder(this, this.nodeFactory.create());
     }
@@ -103,12 +126,21 @@ public class Layer extends AbstractCollection<Node> {
         return this;
     }
 
+    public Optional<Node> first() {
+        return this.storage.stream().filter(Objects::nonNull).findFirst();
+    }
+
+    public Optional<Node> last() {
+        final int sz = this.storage.size()-1;
+        return IntStream.range(0,this.storage.size()).map(i -> sz - i).mapToObj(this.storage::get).filter(Objects::nonNull).findFirst();
+    }
+
     /**
      * Sorts nodes in this layer by the given comparator, compacts the collection pre sorting.
      * @param comparator the comparator to use for sorting
      * @return this instance
      */
-    public Layer sortWithin(Comparator<Node> comparator) {
+    public Layer sort(Comparator<Node> comparator) {
         compact();
         storage.subList(0, size).sort(comparator);
         return this;
@@ -170,6 +202,31 @@ public class Layer extends AbstractCollection<Node> {
             compact();
 
         return n;
+    }
+
+    /**
+     * Return a stream of the nodespan
+     * @param start the left node, node with lowest id
+     * @param stop the right node, node with highest id, inclusive.
+     * @return Stream of nodes in range
+     */
+    public Stream<Node> nodespan(Node start, Node stop) {
+        Objects.requireNonNull(start);
+        Objects.requireNonNull(stop);
+        if(start.layer != this)
+            throw new DataInconsistencyException(
+                    String.format("Start node ( %s ) is not bound to this layer: %s", start, this));
+
+        if(stop.layer != this)
+            throw new DataInconsistencyException(
+                    String.format("Stop node ( %s ) is not bound to this layer: %s", stop, this));
+
+        if(start.id > stop.id)
+            throw new DataInconsistencyException(
+                    String.format("Start and stop are not in sequence: start.id = %d, stop.id = %d", start.id, stop.id)
+            );
+
+        return IntStream.range(start.id, stop.id+1).mapToObj(this.storage::get).filter(Objects::nonNull);
     }
 
     @Override

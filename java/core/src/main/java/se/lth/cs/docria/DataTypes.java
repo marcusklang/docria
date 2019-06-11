@@ -24,6 +24,10 @@ public class DataTypes {
     public static final DataType STRING = new DataType.Builder(DataTypeName.STRING).build();
     public static final DataType BINARY = new DataType.Builder(DataTypeName.BINARY).build();
 
+    public static DataType nodespan(String layer) {
+        return new DataType.Builder(DataTypeName.NODE_SPAN).addArg("layer", layer).build();
+    }
+
     public static DataType noderef(String layer) {
         return new DataType.Builder(DataTypeName.NODE).addArg("layer", layer).build();
     }

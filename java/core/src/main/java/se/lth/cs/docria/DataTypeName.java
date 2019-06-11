@@ -28,7 +28,8 @@ public enum DataTypeName {
     SPAN("span"),
     EXT("ext"),
     NODE("noderef"),
-    NODE_ARRAY("noderef_array");
+    NODE_ARRAY("noderef_array"),
+    NODE_SPAN("nodespan");
 
     private final String name;
 

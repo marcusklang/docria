@@ -55,6 +55,8 @@ public abstract class Value {
         throw new UnsupportedOperationException();
     }
 
+    public NodeSpan nodeSpanValue() { throw new UnsupportedOperationException(); }
+
     public void visit(ValueVisitor visitor) {
         visitor.accept(this);
     }

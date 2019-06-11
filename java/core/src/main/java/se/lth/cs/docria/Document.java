@@ -54,6 +54,14 @@ public class Document {
         return layers.values().stream();
     }
 
+    /**
+     * Add layer
+     *
+     * @param layer layer to add
+     * @return this document
+     * @see Layer#create(String)
+     * @see Document#add(Schema.Layer)
+     */
     public Document add(Layer layer) {
         if(layers.containsKey(layer.name())) {
             throw new IllegalArgumentException("Document already contains a layer with name '" + layer.name() + "'");
@@ -71,6 +79,13 @@ public class Document {
         return text;
     }
 
+    /**
+     * Construct layer from schema
+     *
+     * @param schema schema configured
+     * @return constructed layer
+     * @see Layer#create(String) how to builder a layer schema
+     */
     public Layer add(Schema.Layer schema) {
         Layer layer = new Layer(this, schema);
         this.schema.add(schema);
@@ -222,12 +237,26 @@ public class Document {
         return this;
     }
 
+    /**
+     * @deprecated use {@link #add(Schema.Layer)} with {@link Layer#create(String)}
+     *
+     * @param name the name to define layer with
+     * @return layer builder
+     */
     public Schema.LayerBuilder layerBuilder(String name) {
         return Schema.layer(name);
     }
 
     public Text text(String name) {
         return texts.get(name);
+    }
+
+    /**
+     * Convention method to access text("main")
+     * @return main text
+     */
+    public Text maintext() {
+        return text("main");
     }
 
     public Collection<Text> texts() {

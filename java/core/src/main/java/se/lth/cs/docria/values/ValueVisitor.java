@@ -16,6 +16,7 @@
 package se.lth.cs.docria.values;
 
 import se.lth.cs.docria.Node;
+import se.lth.cs.docria.NodeSpan;
 import se.lth.cs.docria.Span;
 import se.lth.cs.docria.Value;
 
@@ -67,6 +68,10 @@ public interface ValueVisitor {
     }
 
     public default void accept(NodeArrayValue value) {
+        this.accept((Value)value);
+    }
+
+    public default void accept(NodeSpan value) {
         this.accept((Value)value);
     }
 }

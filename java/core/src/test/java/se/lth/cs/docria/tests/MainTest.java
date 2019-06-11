@@ -204,20 +204,21 @@ public class MainTest {
 
         Matcher matcher = pattern.matcher(main_text);
         while(matcher.find()) {
-            tokenLayer.create()
+            tokenLayer.add(
+            Node.builder(tokenLayer)
                       .put("text", main_text.span(matcher.start(), matcher.end()))
-                      .insert();
+                      .build());
         }
 
-        neLayer.create()
+        neLayer.add(Node.builder(neLayer)
                .put("text", main_text.span(25, 29))
                .put("cls", "GPE")
-               .insert();
+               .build());
 
-        neLayer.create()
+        neLayer.add(Node.builder(neLayer)
                .put("text", main_text.span(31, 37))
                .put("cls", "GPE")
-               .insert();
+               .build());
 
         doc = MsgpackCodec.decode(MsgpackCodec.encode(doc).toByteArray());
         tokenLayer = doc.layer("token");
@@ -230,5 +231,68 @@ public class MainTest {
         assertEquals("Lund Sweden", neText);
     }
 
+    @Test
+    public void testNodeSpan() {
+        Document doc = new Document();
+        Text main_text = doc.add(new Text("main", "This code was written in Lund, Sweden."));
+        //                                         01234567890123456789012345678901234567
+        //                                         0         1         2         3
 
+        Layer sentenceLayer = doc.add(Layer.builder("sentence")
+                                 .addField("tokens", DataTypes.nodespan("token"))
+                                 .build());
+
+        Layer tokenLayer = doc.add(Layer.builder("token")
+                                         .addField("text", doc.maintext().spanType())
+                                         .build());
+
+        Layer neLayer = doc.add(Layer.builder("named_entity")
+                                      .addField("text", main_text.spanType())
+                                      .addField("cls", DataTypes.STRING)
+                                      .build());
+
+        Matcher matcher = pattern.matcher(main_text);
+        while(matcher.find()) {
+            tokenLayer.add(
+                Node.builder(tokenLayer)
+                          .put("text", main_text.span(matcher.start(), matcher.end()))
+                          .build()
+            );
+        }
+
+        sentenceLayer.add(
+                Node.builder(sentenceLayer).put("tokens",
+                                                new NodeSpan(tokenLayer.first().get(),
+                                                        tokenLayer.last().get()))
+                    .build());
+
+        sentenceLayer.add(
+                Node.builder(sentenceLayer).put("tokens", Values.get(tokenLayer.get(5), tokenLayer.get(7)))
+                .build()
+        );
+
+        neLayer.add(Node.builder(neLayer)
+               .put("text", main_text.span(25, 29))
+               .put("cls", "GPE")
+               .build());
+
+        neLayer.add(Node.builder(neLayer)
+               .put("text", main_text.span(31, 37))
+               .put("cls", "GPE")
+               .build());
+
+        doc = MsgpackCodec.decode(MsgpackCodec.encode(doc).toByteArray());
+        sentenceLayer = doc.layer("sentence");
+        tokenLayer = doc.layer("token");
+        neLayer = doc.layer("named_entity");
+
+        String tokenText = tokenLayer.stream().map(n -> n.get("text").spanValue().toString()).collect(Collectors.joining(" "));
+        assertEquals("This code was written in Lund , Sweden .", tokenText);
+
+        String neText = neLayer.stream().map(n -> n.get("text").spanValue().toString()).collect(Collectors.joining(" "));
+        assertEquals("Lund Sweden", neText);
+
+        NodeSpan ns = sentenceLayer.first().get().get("tokens").nodeSpanValue();
+        assertEquals("This code was written in Lund, Sweden.", ns.stringValue());
+    }
 }

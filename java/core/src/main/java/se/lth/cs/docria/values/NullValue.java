@@ -15,8 +15,7 @@
 
 package se.lth.cs.docria.values;
 
-import se.lth.cs.docria.DataType;
-import se.lth.cs.docria.Value;
+import se.lth.cs.docria.*;
 
 public class NullValue extends Value {
     private NullValue() {
@@ -53,6 +52,31 @@ public class NullValue extends Value {
     @Override
     public double doubleValue() {
         return 0.0;
+    }
+
+    @Override
+    public byte[] binaryValue() {
+        return new byte[0];
+    }
+
+    @Override
+    public Node nodeValue() {
+        throw new NullPointerException();
+    }
+
+    @Override
+    public Node[] nodeArrayValue() {
+        return new Node[0];
+    }
+
+    @Override
+    public Span spanValue() {
+        throw new NullPointerException();
+    }
+
+    @Override
+    public NodeSpan nodeSpanValue() {
+        throw new NullPointerException();
     }
 
     @Override
