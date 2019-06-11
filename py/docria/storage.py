@@ -14,22 +14,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+"""I/O module, read/write collections of documents"""
 import os
 from io import BytesIO, RawIOBase, SEEK_SET, SEEK_CUR, SEEK_END
 from msgpack import Unpacker, Packer
-from typing import Optional, Callable, Dict
+from typing import Optional, Callable, Dict, Union, List, Tuple
 import zlib
 from typing import Iterator
 import struct
-from docria.model import Document
 import importlib
+from docria.model import Document
+from docria.codec import MsgpackDocument
+import tarfile
+import time
 
 
 def _module_available(name):
     return importlib.util.find_spec(name) is not None
 
 
-class BoundaryReader(RawIOBase):
+class _BoundaryReader(RawIOBase):
     """Note: Seek is not ready for prime time yet, unresolved bugs."""
     def __init__(self, inputio):
         super().__init__()
@@ -116,7 +120,7 @@ class BoundaryReader(RawIOBase):
         return False
 
 
-class BoundaryWriter(RawIOBase):
+class _BoundaryWriter(RawIOBase):
     def __init__(self, outputio, boundary=20, **kwargs):
         super().__init__()
         self.outputio = outputio  # type: RawIOBase
@@ -176,7 +180,13 @@ class BoundaryWriter(RawIOBase):
         self.outputio.close()
 
 
-class DocumentBlock:
+class MsgpackDocumentBlock:
+    """
+    Represents a block of MessagePack docria documents
+
+    .. automethod:: __iter__
+    .. automethod:: __next__
+    """
     def __init__(self, position: int, rawbuffer: bytes):
         self._dataread = 0
         self._data = BytesIO(rawbuffer)
@@ -185,9 +195,11 @@ class DocumentBlock:
 
     @property
     def position(self)->int:
+        """Get the original byte position"""
         return self._position
 
     def tell(self)->int:
+        """Get the current byte position within this block"""
         return self._unpacker.tell()+self._dataread
 
     def seek(self, position)->int:
@@ -196,7 +208,8 @@ class DocumentBlock:
         self._unpacker = Unpacker(self._data, raw=False)
         return pos
 
-    def documents(self):
+    def documents(self)->List[Tuple[int, MsgpackDocument]]:
+        """Return all documents as a list of tuples (position, MessagePack Docria document)"""
         docs = []
 
         last = 0
@@ -208,9 +221,11 @@ class DocumentBlock:
         return docs
 
     def __iter__(self):
+        """:returns: self"""
         return self
 
     def __next__(self):
+        """:returns: MsgpackDocument with the encoded document"""
         from docria.codec import MsgpackDocument
 
         blockpos = self.tell()
@@ -221,7 +236,8 @@ class DocumentBlock:
             return MsgpackDocument(data, ref=(self._position, blockpos))
 
 
-class Codecs:
+class BlockCodecs:
+    """Block compression codecs"""
     NONE = ("none", lambda x: x, lambda x: x)
     DEFLATE = ("zip", lambda x: zlib.compress(x), lambda x: zlib.decompress(x))
     DEFLATE_SQUARED = ("zipsq",
@@ -230,14 +246,15 @@ class Codecs:
                        lambda x: zlib.decompress(zlib.decompress(x)))
 
 
-Name2Codec = {
-    "none": Codecs.NONE,
-    "zip": Codecs.DEFLATE,
-    "zipsq": Codecs.DEFLATE_SQUARED
+_Name2Codec = {
+    "none": BlockCodecs.NONE,
+    "zip": BlockCodecs.DEFLATE,
+    "zipsq": BlockCodecs.DEFLATE_SQUARED
 }
 
 
-class DocumentReader:
+class MsgpackDocumentReader:
+    """Reader for the blocked MessagePack document file format"""
     def __init__(self, inputio: RawIOBase):
         self.inputio = inputio
         self.dataread = 4
@@ -248,7 +265,7 @@ class DocumentReader:
         self.unpacker = Unpacker(self.inputio, raw=False)
 
         codecname = next(self.unpacker)
-        self.codec = Name2Codec.get(codecname, None)
+        self.codec = _Name2Codec.get(codecname, None)
         if self.codec is None:
             raise ValueError("Unsupported codec: %s" % codecname)
         else:
@@ -259,18 +276,29 @@ class DocumentReader:
         if self.advanced:
             raise NotImplementedError("Advanced mode not implemented.")
 
-        self.block = None  # type: DocumentBlock
+        self.block = None  # type: MsgpackDocumentBlock
+        self._lastblockpos = inputio.tell()
 
-    def __iter__(self)->Iterator[Document]:
+    def __iter__(self)->Iterator[MsgpackDocument]:
         return self
 
-    def __enter__(self)->"DocumentReader":
+    def __enter__(self)-> "MsgpackDocumentReader":
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.inputio.close()
 
     def get(self, ref):
+        """
+        Returns a specific document at position (file position, block position)
+
+        :param ref: tuple of (raw file position, uncompressed block position)
+
+        :return: MessagePack document instance
+
+        :note:
+        This method assumes and requires that the underlying I/O supports seeking.
+        """
         if self.block is None or self.block.position != ref[0]:
             self.seek(ref[0])
             self.block = self.readblock()
@@ -279,12 +307,21 @@ class DocumentReader:
         return next(self.block)
 
     def seek(self, position):
+        """
+        Seek to a block position
+
+        :param position: raw file position
+
+        :note:
+        This method assumes and requires that the underlying I/O supports seeking.
+        """
         self.block = None
         self.inputio.seek(position, SEEK_SET)
         self.unpacker = Unpacker(self.inputio, raw=False)
         self.dataread = position
 
     def blocks(self):
+        """Get iterator for all document blocks"""
         while True:
             bl = self.readblock()
             if bl is None:
@@ -292,24 +329,25 @@ class DocumentReader:
             else:
                 yield bl
 
-    def readblock(self)->Optional[DocumentBlock]:
-        pos = self.unpacker.tell() + self.dataread
+    def readblock(self)->Optional[MsgpackDocumentBlock]:
+        """Read a single block if possible"""
+        self._lastblockpos = self.unpacker.tell() + self.dataread
         data = next(self.unpacker, None)
         if data is None:
             return None
         else:
             buf = self.codec(data)
-            blk = DocumentBlock(pos, buf)
+            blk = MsgpackDocumentBlock(self._lastblockpos, buf)
             return blk
 
-    def __next__(self)->Document:
-        from docria.codec import MsgpackCodec
+    def __next__(self)->MsgpackDocument:
         if self.block is not None:
+            start = self.block.tell()
             doc = next(self.block._unpacker, None)
             if doc is None:
                 self.block = None
             else:
-                return MsgpackCodec.decode(doc)
+                return MsgpackDocument(doc, ref=(self._lastblockpos, start))
 
         while self.block is None:
             datablock = self.readblock()
@@ -317,18 +355,50 @@ class DocumentReader:
                 raise StopIteration()
 
             self.block = datablock
+            start = self.block.tell()
             doc = next(self.block._unpacker, None)
             if doc is None:
                 self.block = None
             else:
-                return MsgpackCodec.decode(doc)
+                return MsgpackDocument(doc, ref=(self._lastblockpos, start))
 
     def close(self):
         self.inputio.close()
 
 
-class DocumentWriter:
-    def __init__(self, outputio: RawIOBase, num_docs_per_block=128, codec=Codecs.DEFLATE, **kwargs):
+class DocumentReader:
+    """Utility reader, returns Docria documents."""
+    def __init__(self, inputreader):
+        self.inputreader = inputreader
+
+    def __enter__(self)-> "MsgpackDocumentReader":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.inputreader.close()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        doc = next(self.inputreader, None)
+        if doc is None:
+            raise StopIteration()
+
+        return doc.document()
+
+
+class MsgpackDocumentWriter:
+    """Writer for the blocked MessagePack document file format"""
+    def __init__(self, outputio: RawIOBase, num_docs_per_block=128, codec=BlockCodecs.DEFLATE, **kwargs):
+        """
+        Primary constructor
+
+        :param outputio: the underlying I/O device to write to.
+        :param num_docs_per_block: the number of documents to cache before
+                                   compressing the entire block and write to underlying storage.
+        :param codec: the compression codec to use for blocks
+        """
         self.outputio = outputio
         self.packer = Packer(use_bin_type=True)
 
@@ -337,7 +407,7 @@ class DocumentWriter:
         self.outputio.write(self.packer.pack(num_docs_per_block))
         self.outputio.write(self.packer.pack(False))
 
-        if isinstance(self.outputio, BoundaryWriter):
+        if isinstance(self.outputio, _BoundaryWriter):
             self.outputio.split()
 
         self.currentblock = BytesIO()
@@ -353,58 +423,197 @@ class DocumentWriter:
         self.close()
 
     def write(self, doc: Document, **kwargs):
-        from docria.codec import MsgpackCodec
-        binarydata = MsgpackCodec.encode(doc, **kwargs)
+        """
+        Write docria document
 
-        self.currentblock.write(self.packer.pack(binarydata))
+        :param doc: accepts unencoded Document or Messagepack Document for fast writing
+        :param kwargs: options to pass to :meth:`docria.codec.MsgpackCodec.encode`
+        """
+        from docria.codec import MsgpackCodec
+
+        if isinstance(doc, Document):
+            data = MsgpackCodec.encode(doc, **kwargs)
+        elif isinstance(doc, MsgpackDocument):
+            data = doc.rawdata.getvalue()
+        else:
+            raise ValueError("Got unsupported doc, only Document and MsgpackDocument allowed")
+
+        self.currentblock.write(self.packer.pack(data))
         self.current_block_count += 1
 
         if self.current_block_count == self.num_docs_per_block:
             self.flush()
 
     def flush(self):
+        """
+        Flush data to the underlying storage.
+
+        :note:
+        Will force currently cached blocks to be compressed and written to disk.
+        This might result in blocks having less than specified number of documents per block.
+        """
         if self.current_block_count > 0:
             self.outputio.write(self.packer.pack(self.codec(self.currentblock.getvalue())))
 
-            if isinstance(self.outputio, BoundaryWriter):
+            if isinstance(self.outputio, _BoundaryWriter):
                 self.outputio.split()
 
             self.currentblock = BytesIO()
             self.current_block_count = 0
 
     def close(self):
+        """Flush data and close the underlying storage"""
         self.flush()
         self.outputio.close()
 
 
+class TarMsgpackReader:
+    """Reader for the tar-based sequential MessagePack format."""
+    def __init__(self, inputpath, mode="r|gz", **kwargs):
+        """
+        TarMsgpackReader constructor
+
+        :param inputpath: filepath to tar
+        :param mode: the tarball reading mode, :meth:`tarfile.open`, \
+                     can be used to select bz2 \or lzma compression modes.
+        """
+        self.tarreader = tarfile.open(inputpath, mode=mode)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.tarreader.close()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        while True:
+            ti = self.tarreader.next()  # type: tarfile.TarInfo
+            if ti is None:
+                raise StopIteration
+
+            if ti.isfile():
+                obj = self.tarreader.extractfile(ti)
+                return MsgpackDocument(obj.read())
+
+    def close(self):
+        self.tarreader.close()
+
+
+class TarMsgpackWriter:
+    """Writer for the tar-based sequential MessagePack format."""
+    def __init__(self, outputpath, docformat="doc%05d.msgpack", rootdir=None, mode="w|gz", **kwargs):
+        """
+        TarMsgpackWriter
+
+        :param outputpath: filepath to tar
+        :param docformat: naming convention of files in the tarball,
+        must include a single digit using old-style string formatting.
+        :param rootdir: set to string if a root directory within the tarfile should be used.
+        :param mode: the tarball writing mode, :meth:`tarfile.open`, \
+                     can be used to select bz2 or lzma compression modes.
+        """
+        self.tarwriter = tarfile.open(outputpath, mode=mode, **kwargs)
+        self.rootdir = rootdir
+        self.docformat = docformat
+        if rootdir is not None:
+            ti = tarfile.TarInfo(rootdir)
+            ti.type = tarfile.DIRTYPE
+            ti.mtime = time.time()
+
+            self.tarwriter.addfile(ti)
+
+        self.i = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def write(self, doc: Union[Document, MsgpackDocument]):
+        """
+        Write document
+
+        :param doc: accepts unencoded Document, and encoded MsgpackDocument for fast conversion.
+        """
+        from docria.codec import MsgpackCodec
+        if self.rootdir is not None:
+            ti = tarfile.TarInfo(os.path.join(self.rootdir, self.docformat % self.i))
+        else:
+            ti = tarfile.TarInfo(self.docformat % self.i)
+
+        ti.mtime = time.time()
+
+        if isinstance(doc, Document):
+            data = MsgpackCodec.encode(doc)
+        elif isinstance(doc, MsgpackDocument):
+            data = doc.rawdata.getvalue()
+        else:
+            raise ValueError("Got unsupported doc, only Document and MsgpackDocument allowed")
+
+        ti.size = len(data)
+        self.i += 1
+
+        self.tarwriter.addfile(ti, fileobj=BytesIO(data))
+
+    def close(self):
+        self.tarwriter.close()
+
+
 class DocumentIO:
+    """
+    .. deprecated::
+        Use concrete variants instead such as MsgpackDocumentIO
+    """
     @staticmethod
-    def write(filepath, **kwargs)->DocumentWriter:
-        return DocumentWriter(open(filepath, "wb"), **kwargs)
+    def write(filepath, **kwargs)->MsgpackDocumentWriter:
+        return MsgpackDocumentWriter(open(filepath, "wb"), **kwargs)
 
     @staticmethod
-    def writefile(filelike: RawIOBase, **kwargs)->DocumentWriter:
-        return DocumentWriter(filelike, **kwargs)
+    def writefile(filelike: RawIOBase, **kwargs)->MsgpackDocumentWriter:
+        return MsgpackDocumentWriter(filelike, **kwargs)
 
     @staticmethod
     def read(filepath, **kwargs)->DocumentReader:
-        return DocumentReader(open(filepath, "rb"))
+        return DocumentIO.readfile(open(filepath, "rb"), **kwargs)
 
     @staticmethod
     def readfile(filelike: RawIOBase, **kwargs)->DocumentReader:
-        return DocumentReader(filelike)
+        return DocumentReader(MsgpackDocumentReader(filelike))
+
+
+class MsgpackDocumentIO:
+    @staticmethod
+    def read(filepath, **kwargs)->MsgpackDocumentReader:
+        return MsgpackDocumentIO.readfile(open(filepath, "rb"))
+
+    @staticmethod
+    def readfile(filelike, **kwargs)->MsgpackDocumentReader:
+        return MsgpackDocumentReader(filelike)
 
 
 class DocumentFileIndex:
     """In-memory index of a single docria file"""
-    def __init__(self, filepath, properties, docs):
+    def __init__(self, filepath: str,
+                 properties: Dict[str, Dict[any, List[int]]],
+                 docrefs: List[Tuple[int, int]]):
+        """
+        Constructor of DocumetnFileIndex
+
+        :param filepath: path to MessagePack Document file
+        :param properties: the property index, dictin
+        :param docrefs: list of document references
+        """
         self.filepath = filepath
         self.properties = properties
-        self.docs = docs
+        self.docrefs = docrefs
 
     @staticmethod
     def build(source_filepath, *properties, **kwargs):
-        reader = DocumentIO.read(source_filepath, **kwargs)
+        reader = MsgpackDocumentIO.read(source_filepath, **kwargs)
         property2docis = {prop: {} for prop in properties}
         docs = []
 
@@ -434,10 +643,12 @@ class DocumentFileIndex:
         from docria.codec import MsgpackCodec
 
         if len(results) > 0:
-            reader = DocumentIO.read(self.filepath)
+            reader = MsgpackDocumentIO.read(self.filepath)
             lastblk = None
+
+            # Optimized reading if multiple hits exist within a block sequentially
             for docid in sorted(results):
-                ref = self.docs[docid]
+                ref = self.docrefs[docid]
                 try:
                     if lastblk is None:
                         reader.seek(ref[0])
@@ -457,7 +668,7 @@ class DocumentFileIndex:
 
 
 class DocumentIndex:
-    """Simple In-Memory Index for debugging"""
+    """Multi-file in-memory index"""
     def __init__(self, basepath="."):
         self.basepath = os.path.abspath(basepath)
         self.index = {}  # type: Dict[str, DocumentFileIndex]
@@ -472,12 +683,14 @@ class DocumentIndex:
                 yield doc
 
     def save(self, path):
+        """Save index as a pickle file"""
         import pickle
         with open(path, "wb") as fout:
             pickle.dump(self, fout, pickle.HIGHEST_PROTOCOL)
 
     @staticmethod
     def load(path):
+        """Load pickle index"""
         import pickle
         with open(path, "rb") as fin:
             return pickle.load(fin)
@@ -489,20 +702,44 @@ def _build_file_index(args):
     return DocumentFileIndex.build(path, *props)
 
 
-def build_file_index(path, *props):
+def build_msgpack_fileindex(path, *props)->"DocumentFileIndex":
+    """
+    Construct a document index
+
+    :param path: path to file which can be read by :class:`~docria.storage.MsgpackDocumentReader`
+    :param props: the properties to index
+
+    :return: built index
+    """
     return DocumentFileIndex.build(path, *props)
 
 
-def build_directory_index(path, *props, basepath="."):
-    from multiprocessing import Pool
+def build_msgpack_directory_fileindex(path, *props, basepath=".", num_workers=None)->"DocumentIndex":
+    """
+    Construct a document index spanning over multiple docria files.
+
+    :param path: path to the directory containing docria files
+    :param props: the properties to index
+    :param basepath: the relative path to use when saving filepath locations
+    :param num_workers: the number of processes to spawn for multicore processing of files,
+    default is the number of cores available as given by :meth:`multiprocessing.cpu_count`.
+
+    :return: populated DocumentIndex
+
+    :note:
+    basepath can be used to create an index which only has relative references and thus can be
+    included with the document collection.
+    """
+    from multiprocessing import Pool, cpu_count
 
     docria_files = [os.path.join(path, fpath) for fpath in os.listdir(path)
                     if not fpath.startswith(".") and fpath.lower().endswith(".docria")]
     master_indx = DocumentIndex(basepath=basepath)
 
     proplist = list(props)
+    num_workers = cpu_count() if num_workers is None else num_workers
 
-    with Pool() as p:
+    with Pool(processes=num_workers) as p:
         if _module_available("tqdm"):
             from tqdm import tqdm
 

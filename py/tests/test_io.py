@@ -15,7 +15,7 @@
 # limitations under the License.
 #
 from docria.model import Document, DataTypes as T
-from docria.storage import DocumentWriter, BoundaryWriter, BoundaryReader, DocumentReader
+from docria.storage import MsgpackDocumentWriter, _BoundaryWriter, _BoundaryReader, MsgpackDocumentReader
 import re
 import os
 
@@ -37,14 +37,14 @@ def test_io():
 
     token[2]["head"] = token[0]
 
-    with DocumentWriter(BoundaryWriter(open("test.docria", "wb"))) as writer:
+    with MsgpackDocumentWriter(_BoundaryWriter(open("test.docria", "wb"))) as writer:
         writer.write(doc)
 
     del main_text
     del token
     del doc
 
-    with DocumentReader(BoundaryReader(open("test.docria", "rb"))) as reader:
+    with MsgpackDocumentReader(_BoundaryReader(open("test.docria", "rb"))) as reader:
         doc = next(reader)  # type:
 
     os.unlink("test.docria")

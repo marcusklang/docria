@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+"""Presentation module, utilities for formatting document objects."""
 
 from typing import List, Dict, Tuple, Optional
 from html import escape
@@ -382,5 +383,7 @@ def get_representation(value):
                 return "[%d nodes from layer: %s]" % (len(value), ", ".join(nodetypes))
             else:
                 return "[%d nodes from %d layers]" % (len(value), len(nodetypes))
+        else:
+            return "[]"
     else:
         return repr(value)

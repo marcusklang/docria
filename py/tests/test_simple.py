@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-from docria.model import Document, DataTypes as T, SchemaValidationError
+from docria.model import Document, DataTypes as T, SchemaValidationError, NodeSpan
 from docria.codec import MsgpackCodec, JsonCodec
 import re
 import base64
@@ -67,10 +67,22 @@ def create_doc():
     return doc
 
 
+def test_nodespan():
+    doc = create_doc()
+    geoloc = doc.add_layer("geolocations", tokens=T.nodespan("token"))
+    tokens = list(doc["token"][doc["token"]["text"].covered_by(25, 37)])
+    n = geoloc.add(tokens=NodeSpan(tokens[0], tokens[-1]))
+    assert " ".join(map(lambda tok: str(tok["text"]), n["tokens"])) == "Lund , Sweden"
+
+    redoc = MsgpackCodec.decode(MsgpackCodec.encode(doc))
+    geoloc = redoc["geolocations"]
+    assert " ".join(map(lambda tok: str(tok["text"]), geoloc[0]["tokens"])) == "Lund , Sweden"
+
+
 def test_retain():
     doc = create_doc()
 
-    tokens = doc["token"][[1, 5, 7]]  # Directly accessing nodes by IDs, is only reliable with a compacted layer.
+    tokens = doc["token"].to_list()[[1, 5, 7]]
     assert str(tokens[0]["text"]) == "code"
     assert str(tokens[1]["text"]) == "Lund"
     assert str(tokens[2]["text"]) == "Sweden"

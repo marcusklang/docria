@@ -14,8 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
-from docria.model import Document, Node, NodeLayerCollection, TEnum, TextSpan
+"""Functions for various processing purposes"""
+from docria.model import Document, Node, NodeLayerCollection, DataTypeEnum, TextSpan
 from typing import Set, List, Callable, Tuple, Dict, Optional, Iterator, Iterable, Any
 from collections import deque, namedtuple, defaultdict
 import functools
@@ -69,9 +69,9 @@ def children_of(layer: NodeLayerCollection, *props):
 
     if len(props) == 1:
         typedef = layer.schema.fields[props[0]]
-        if typedef.typename == TEnum.NODEREF:
+        if typedef.typename == DataTypeEnum.NODEREF:
             return node_iter(props[0])
-        elif typedef.typename == TEnum.NODEREF_MANY:
+        elif typedef.typename == DataTypeEnum.NODEREF_MANY:
             return node_array_iter(props[0])
         else:
             raise ValueError("field %s has type %s which is not supported as a children type" % (
@@ -82,9 +82,9 @@ def children_of(layer: NodeLayerCollection, *props):
         yielders = []
         for prop in props:
             typedef = layer.schema.fields[prop]
-            if typedef.typename == TEnum.NODEREF:
+            if typedef.typename == DataTypeEnum.NODEREF:
                 yielders.append(node_iter(prop))
-            elif typedef.typename == TEnum.NODEREF_MANY:
+            elif typedef.typename == DataTypeEnum.NODEREF_MANY:
                 yielders.append(node_array_iter(prop))
             else:
                 raise ValueError("field %s has type %s which is not supported as a children type" % (
@@ -105,6 +105,7 @@ def bfs(start: Node,
     :param start: the start node
     :param children: function returning children iterator for given node
     :param is_result: optional, function indicating if node should be emitted, default is true for all.
+
     :return iterator of found nodes with depth during search
     """
     visited = set()
@@ -136,6 +137,7 @@ def dfs(start: Node,
     :param start: start node
     :param children: function returning children iterator for given node
     :param is_result: optional, function indicating if node should be emitted, default is true for all.
+
     :return iterator of nodes found during search
     """
     visited = set()
@@ -167,6 +169,7 @@ def dfs_leaves(start: Node,
     :param start: start node
     :param children: function returning children iterator for given node
     :param is_result: optional, function indicating if node should be emitted, default is true for all.
+
     :return iterator of nodes found during search
     """
     visited = set()
@@ -209,12 +212,12 @@ def span_translate(doc: Document,
     source_pos_remap, target_pos_remap = source_target_remap
 
     mapping_layer = doc.layer[mapping_layer]
-    assert mapping_layer.schema.fields[target_pos].typename == TEnum.SPAN
-    assert mapping_layer.schema.fields[source_pos].typename == TEnum.SPAN
+    assert mapping_layer.schema.fields[target_pos].typename == DataTypeEnum.SPAN
+    assert mapping_layer.schema.fields[source_pos].typename == DataTypeEnum.SPAN
 
     layer_remap = doc.layer[layer_remap]
-    assert layer_remap.schema.fields[source_pos_remap].typename == TEnum.SPAN
-    assert layer_remap.schema.fields[target_pos_remap].typename == TEnum.SPAN
+    assert layer_remap.schema.fields[source_pos_remap].typename == DataTypeEnum.SPAN
+    assert layer_remap.schema.fields[target_pos_remap].typename == DataTypeEnum.SPAN
 
     target_text = doc.texts[mapping_layer.schema.fields[target_pos].options["context"]]
 
@@ -287,24 +290,28 @@ def is_covered_by(span_a: TextSpan, span_b: TextSpan)->bool:
 def group_by_span(group_nodes: List[Node],
                   layer_nodes: Dict[str, Iterable[Node]],
                   resolution="intersect",
-                  group_span_field ="text",
-                  layer_span_field=None,
+                  group_span_field="text",
+                  layer_span_field: Optional[Dict[str, str]]=None,
                   include_empty_groups=True)\
         ->List[Tuple[Node, Dict[str, List[Node]]]]:
     """
     Groups all nodes in layer_nodes into the corresponding bucket_node
 
-    Nodes with spans that equals to NIL/None are ignored.
+    Nodes with textspans that equals to NIL/None are ignored.
 
     :param group_nodes: the nodes to group by
     :param layer_nodes: the nodes to assign to zero or more groups
-    :param resolution:  which resolution algorithm that shall be used: intersect or cover
-                        intersect: the identity function for resolutions (all intersects are grouped)
-                        cover: imposes a requirement that the group node must fully
-                               cover the layer node (node_start >= group_start and node_stop <= group_stop)
-    :param group_span_field: name of span property name, defaults to text
-    :param layer_span_field: layer to span property name, defaults to text
+    :param resolution: which resolution algorithm that shall be used: *intersect* or *cover*
+
+                        * "**intersect**": the identity function for resolutions (all intersects are grouped)
+                        * "**cover**": imposes a requirement that the group node must fully cover the layer node \
+                       (node_start >= group_start and node_stop <= group_stop)
+
+    :param group_span_field: name of textspan property name, *default field* is "text"
+    :param layer_span_field: dictionary {layer: field name for textspan}, *default field* is "text"
     :param include_empty_groups: include groups which does not contain any matching layer nodes
+
+    :return List of tuples: (group node, dictionary with layer name -> [ content of group for this layer ])
     """
     if layer_span_field is None:
         layer_span_field = defaultdict(lambda: "text")

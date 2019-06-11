@@ -14,7 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-from docria.model import TextSpan, Document, TEnum, NodeLayerSchema, String2DataType, DataType, Node, ExtData
+"""Codecs, encoding/decoding documents to/from binary or text representations"""
+from docria.model import TextSpan, Document, DataTypeEnum, NodeLayerSchema, String2DataType, DataType, Node, ExtData, NodeSpan
 import msgpack
 import json
 import logging
@@ -29,7 +30,7 @@ class DataError(Exception):
         super().__init__(message)
 
 
-def codec_encode_span(l, v: "TextSpan"):
+def _codec_encode_span(l, v: "TextSpan"):
     if v is None:
         l.append(None)
         l.append(None)
@@ -39,16 +40,18 @@ def codec_encode_span(l, v: "TextSpan"):
 
 
 class Codec:
+    """Utility methods for all codecs"""
     encoders = {
-        TEnum.I32: lambda l, v: l.append(None if v is None else int(v)),
-        TEnum.I64: lambda l, v: l.append(None if v is None else int(v)),
-        TEnum.F64: lambda l, v: l.append(None if v is None else float(v)),
-        TEnum.BOOL: lambda l, v: l.append(None if v is None else bool(v)),
-        TEnum.STRING: lambda l, v: l.append(None if v is None else str(v)),
-        TEnum.BINARY: lambda l, v: l.append(None if v is None else bytes(v)),
-        TEnum.NODEREF: lambda l, v: l.append(None if v is None else v._id),
-        TEnum.NODEREF_MANY: lambda l, v: l.append(None if v is None or len(v) == 0 else [n._id for n in v]),
-        TEnum.SPAN: codec_encode_span
+        DataTypeEnum.I32: lambda l, v: l.append(None if v is None else int(v)),
+        DataTypeEnum.I64: lambda l, v: l.append(None if v is None else int(v)),
+        DataTypeEnum.F64: lambda l, v: l.append(None if v is None else float(v)),
+        DataTypeEnum.BOOL: lambda l, v: l.append(None if v is None else bool(v)),
+        DataTypeEnum.STRING: lambda l, v: l.append(None if v is None else str(v)),
+        DataTypeEnum.BINARY: lambda l, v: l.append(None if v is None else bytes(v)),
+        DataTypeEnum.NODEREF: lambda l, v: l.append(None if v is None else v.i),
+        DataTypeEnum.NODEREF_MANY: lambda l, v: l.append(None if v is None or len(v) == 0 else [n.i for n in v]),
+        DataTypeEnum.NODEREF_SPAN: lambda l, v: l.append(None if v is None else [v.left.i, v.right.i - v.left.i]),
+        DataTypeEnum.SPAN: _codec_encode_span
     }
 
     @staticmethod
@@ -75,7 +78,7 @@ class Codec:
 
                 propvalues = []
                 encoder = Codec.encoders[fieldtype.typename]
-                if fieldtype.typename == TEnum.EXT:
+                if fieldtype.typename == DataTypeEnum.EXT:
                     for n in v:
                         extv = node_getter(n, field, None)
                         if extv is not None:
@@ -102,8 +105,69 @@ class Codec:
 
         return texts, types, types_num_nodes, schema
 
+    @staticmethod
+    def commit_layers(doc: "Document",
+                      types: List[str],
+                      schema: Dict[str, List[Tuple[str, any]]],
+                      all_nodes: Dict[str, List[Node]]):
+        """
+        Do post-processing after deserialization phase, for instance replace node ids with node references.
+
+        :param doc: the document
+        :param types: layer names
+        :param schema: schema definition
+        :param all_nodes: dictionary of all nodes
+        """
+        # TODO: Replace types with schema being an OrderedDict
+
+        # Insert layers
+        for typename in types:
+
+            # Create Node Type
+            nt = NodeLayerSchema(typename)
+            for col, typedef in schema[typename]:
+                nt.add(col, typedef)
+
+            layer = doc.add_layer(nt)
+            for n in all_nodes[typename]:
+                n.collection = layer
+
+            layer.unsafe_initialize(all_nodes[typename])
+
+        # Post-process layers
+        for typename in types:
+            for col, typedef in schema[typename]:
+                if typedef.typename == DataTypeEnum.NODEREF:
+
+                    # Replace int placeholds with an actual node reference.
+                    target_type = typedef.options["layer"]
+                    target_nodes = all_nodes[target_type]
+
+                    for n in all_nodes[typename]:
+                        if col in n:
+                            n[col] = target_nodes[n[col]]
+                elif typedef.typename == DataTypeEnum.NODEREF_MANY:
+                    # Replace int placeholds with an actual node reference.
+                    target_type = typedef.options["layer"]
+                    target_nodes = all_nodes[target_type]
+
+                    for n in all_nodes[typename]:
+                        if col in n:
+                            n[col] = [target_nodes[n_item] for n_item in n[col]]
+                elif typedef.typename == DataTypeEnum.NODEREF_SPAN:
+                    # Replace [int, int] with NodeSpan(left, right) which are real node references
+                    target_type = typedef.options["layer"]
+                    target_nodes = all_nodes[target_type]
+
+                    for n in all_nodes[typename]:
+                        if col in n:
+                            lst = n[col]
+                            left_i, right_i = lst[0], lst[0]+lst[1]  # Delta encoded length
+                            n[col] = NodeSpan(target_nodes[left_i], target_nodes[right_i])
+
 
 class JsonCodec:
+    """JSON codec"""
     @staticmethod
     def encode(doc: "Document"):
         return json.dumps(JsonCodec.encode_object(doc))
@@ -218,22 +282,23 @@ class JsonCodec:
                             n[col] = typename(standard_b64decode(data))
 
                 decoder = simple_field
-                if typedef.typename == TEnum.SPAN:
+                if typedef.typename == DataTypeEnum.SPAN:
                     decoder = span_field(doc.texts[typedef.options["context"]], text2offsets[typedef.options["context"]])
 
-                if typedef.typename == TEnum.EXT:
+                if typedef.typename == DataTypeEnum.EXT:
                     decoder = ext_field
 
                 coldata = docobj["types"][typename][col]
                 decoder(coldata)
 
+        # TODO: Replace with Codec.commit_layers
         # Insert layers
         for typename in schema.keys():
 
             # Create Node Type
             nt = NodeLayerSchema(typename)
             for col, typedef in schema[typename]:
-                if typedef.typename == TEnum.NODEREF:
+                if typedef.typename == DataTypeEnum.NODEREF:
 
                     # Replace int placeholds with an actual node reference.
                     target_type = typedef.options["layer"]
@@ -242,7 +307,7 @@ class JsonCodec:
                     for n in all_nodes[typename]:
                         if col in n:
                             n[col] = target_nodes[n[col]]
-                elif typedef.typename == TEnum.NODEREF_MANY:
+                elif typedef.typename == DataTypeEnum.NODEREF_MANY:
                     # Replace int placeholds with an actual node reference.
                     target_type = typedef.options["layer"]
                     target_nodes = all_nodes[target_type]
@@ -260,6 +325,7 @@ class JsonCodec:
 
 
 class MsgpackDocument:
+    """MessagePack Document, allows partial decoding"""
     def __init__(self, rawdata, ref=None):
         self.ref = ref
         if isinstance(rawdata, bytes):
@@ -317,22 +383,26 @@ class MsgpackDocument:
             self._layers = layer_mapping
 
     def properties(self, *props):
+        """Get document properties"""
         self._parse_state(1)
         self.rawdata.seek(self._prop[0])
         unpacker = msgpack.Unpacker(self.rawdata, raw=False)
         return MsgpackCodec.decode_property(unpacker, *props)
 
     def schema(self):
+        """Get document schema"""
         self._parse_state(2)
         return self._schema[0], self._schema[1]
 
     def texts(self, *texts):
+        """Get document text"""
         self._parse_state(2)
         self.rawdata.seek(self._texts[0])
         unpacker = msgpack.Unpacker(self.rawdata, raw=False)
         return MsgpackCodec.decode_texts(unpacker, *texts)
 
     def document(self, *layers, **kwargs):
+        """Get fully decoded document"""
         self._parse_state(3)
         doc = Document()
 
@@ -359,11 +429,12 @@ class MsgpackDocument:
             layerschema = schema[typename]
             all_nodes[typename] = MsgpackCodec.decode_layer(unpacker, doc, typename, text2offsets, layerschema, **kwargs)
 
-        MsgpackCodec.commit_layers(doc, types, schema, all_nodes)
+        Codec.commit_layers(doc, types, schema, all_nodes)
         return doc
 
 
 class MsgpackDocumentExt(ExtData):
+    """Embeddable document as a extended type"""
     def __init__(self, doc):
         super().__init__("doc", doc)
 
@@ -382,6 +453,7 @@ class MsgpackDocumentExt(ExtData):
 
 
 class MsgpackCodec:
+    """MessagePack document codec"""
     @staticmethod
     def debug(data):
         if isinstance(data, bytes):
@@ -618,7 +690,7 @@ class MsgpackCodec:
     @staticmethod
     def decode_layer(unpacker, doc, typename, text2offsets, layerschema, *fields, **kwargs):
         num_nodes = next(unpacker)
-        nodes = [Node() for _ in range(num_nodes)]
+        nodes = [Node().with_id(i) for i in range(num_nodes)]
 
         fieldindx = None
         if len(fields) > 0:
@@ -667,11 +739,11 @@ class MsgpackCodec:
                     return decoder
 
                 decoder = simple_field
-                if typedef.typename == TEnum.SPAN:
+                if typedef.typename == DataTypeEnum.SPAN:
                     decoder = span_field(
                         doc.texts.get(typedef.options["context"], None),
                         text2offsets.get(typedef.options["context"], None))
-                elif typedef.typename == TEnum.EXT:
+                elif typedef.typename == DataTypeEnum.EXT:
                     if typedef.options["type"] == "doc":
                         decoder = doc_field
                     else:
@@ -691,37 +763,6 @@ class MsgpackCodec:
                 unpacker.skip()
 
         return nodes
-
-    @staticmethod
-    def commit_layers(doc, types, schema, all_nodes):
-        # Insert layers
-        for typename in types:
-
-            # Create Node Type
-            nt = NodeLayerSchema(typename)
-            for col, typedef in schema[typename]:
-                if typedef.typename == TEnum.NODEREF:
-
-                    # Replace int placeholds with an actual node reference.
-                    target_type = typedef.options["layer"]
-                    target_nodes = all_nodes[target_type]
-
-                    for n in all_nodes[typename]:
-                        if col in n:
-                            n[col] = target_nodes[n[col]]
-                elif typedef.typename == TEnum.NODEREF_MANY:
-                    # Replace int placeholds with an actual node reference.
-                    target_type = typedef.options["layer"]
-                    target_nodes = all_nodes[target_type]
-
-                    for n in all_nodes[typename]:
-                        if col in n:
-                            n[col] = [target_nodes[n_item] for n_item in n[col]]
-
-                nt.add(col, typedef)
-
-            layer = doc.add_layer(nt)
-            layer.unsafe_initialize(all_nodes[typename])
 
     @staticmethod
     def decode(data, **kwargs):
@@ -769,8 +810,9 @@ class MsgpackCodec:
             unpacker.skip()
 
             layerschema = schema[typename]
-            all_nodes[typename] = MsgpackCodec.decode_layer(unpacker, doc, typename, text2offsets, layerschema, **kwargs)
+            all_nodes[typename] = MsgpackCodec.decode_layer(unpacker, doc, typename,
+                                                            text2offsets, layerschema, **kwargs)
 
-        MsgpackCodec.commit_layers(doc, types, schema, all_nodes)
+        Codec.commit_layers(doc, types, schema, all_nodes)
         return doc
 

@@ -14,9 +14,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+"""Docria document model (**primary module for most users**)"""
 
-from typing import Dict, List, Tuple, Callable, Any, Iterator, Iterable, Union
+from typing import Dict, List, Tuple, Callable, Any, Iterator, Iterable, Union, Set, Optional, Sized
 from enum import Enum
+from .query import *
 
 
 class SchemaValidationError(Exception):
@@ -38,7 +40,7 @@ class DataValidationError(Exception):
         super().__init__(message)
 
 
-class DictAsMembers:
+class _DictAsMembers:
     def __init__(self, data):
         self.__data__ = data
 
@@ -56,27 +58,81 @@ class DictAsMembers:
 
 
 class Node(dict):
-    """Basic building block of the document model"""
+    """
+    Basic building block of the document model
+
+    :Example:
+    >>> from docria.model import Document, DataTypes as T, Node
+    >>>
+    >>> doc = Document()
+    >>> tokens = doc.add_layer("token", pos=T.string)
+    >>>
+    >>> node = Node(pos="NN")
+    >>>
+    >>> tokens.add_many([ node ])
+    >>>
+    >>> print(node["pos"])  # Gets the field of pos
+    >>> print(node.get("pos"))  # Node works like a dictionary
+    >>> print(node.keys())  # return set fields
+    >>> print("pos" in node)  # check if pos field is set.
+    """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._id = -1  # type: int
         self.collection = None  # type: NodeLayerCollection
 
     @property
+    def i(self):
+        """
+        Get the index of this node.
+
+        :return: -1 if not bound to a layer, [0,) if bound in a layer
+        """
+        assert self._id != -1, "Node is not bound to any node collection!"
+        return self._id
+
+    def with_id(self, id):
+        """
+        Utility method to set id and return this node.
+        This is an unsafe method and should only be used when you know what you are doing.
+
+        :param id: internal id
+        :return: self
+        """
+        self._id = id
+        return self
+
+    @property
     def fld(self):
         """Get a pythonic wrapper for this node .e.g node.fld.id == node["id"] """
-        return DictAsMembers(self)
+        return _DictAsMembers(self)
 
     def detach(self):
         """Remove itself from the document model"""
         self.collection.remove(self)
 
-    def is_dangling(self):
+    def is_dangling(self)->bool:
         """Check if this node is dangling i.e. is not attached to an existing layer, possibly removed or never added."""
         return self.collection is None
 
-    def validate(self):
-        self.collection.validate(self)
+    def is_valid(self, noexcept=True)->bool:
+        """
+        Validate this node against schema
+
+        :param noexcept: set to False if exceptions should be raised if validation failure,
+                         this will give the exact cause of validation failure.
+
+        :return: true if valid
+        """
+        if noexcept:
+            try:
+                return self.collection.validate(self)
+            except AssertionError:
+                return False
+            except SchemaValidationError:
+                return False
+        else:
+            return self.collection.validate(self)
 
     def _ipython_key_completions_(self):
         return list(self.keys())
@@ -90,6 +146,31 @@ class Node(dict):
     def __str__(self):
         tbl = self._table_repr_()
         return tbl.render_text()
+
+    @property
+    def left(self)->Union[None, "Node"]:
+        """Get the node left of this node"""
+        return self.collection.left(self)
+
+    @property
+    def right(self)->Union[None, "Node"]:
+        """Get the node right of this node"""
+        return self.collection.right(self)
+
+    def iter_span(self, node: "Node"):
+        """
+        Return iterator which will give the span from this node to the given node
+
+        :param node: target node (inclusive)
+
+        :note:
+        This method corrects for order, i.e. if the target node is to the left of this node, \
+        the returned iterator will start at target node.
+        """
+        if self.i <= node.i:
+            return self.collection.iter_nodespan(self, node)
+        else:
+            return self.collection.iter_nodespan(node, self)
 
     def _table_repr_(self):
         from docria.printout import Table, get_representation
@@ -111,29 +192,16 @@ class Node(dict):
         return "Node<%s#%d>" % (self.collection.schema.name, self._id) if len(self) > 0 else ""
 
 
-class NodeList(list):
-    def __init__(self, iterable: Iterable[Node]):
-        super().__init__(iterable)
+class NodeCollection(Sized):
+    def __init__(self, fieldtypes: Dict[str, "DataType"]):
+        self.fieldtypes = fieldtypes
 
-    def __iter__(self)->Iterator[Node]:
-        return super().__iter__()
-
-    def __getitem__(self, item):
-        getter = super().__getitem__
-        if isinstance(item, list):
-            return [getter(indx) for indx in iter(item)]
-        else:
-            return getter(item)
-
-    def _table_repr_(self):
-        fields = set()
-
-        for n in self:
-            fields.update(n.keys())
+    def _table_repr_(self, title="Node collection with N=%d elements"):
+        fields = self.fieldtypes.keys()
 
         fields = sorted(fields)
         from docria.printout import Table, TableRow, get_representation
-        tbl = Table("Node list with N=%d elements" % len(self))
+        tbl = Table(title % len(self), hide_index=True)
 
         tbl.set_header(*fields)
         for n in self:
@@ -141,6 +209,291 @@ class NodeList(list):
             tbl.add_body(TableRow(*values))
 
         return tbl
+
+    def to_list(self)->"NodeList":
+        """
+        Convert this collection to a NodeList containing all node references
+
+        :return: NodeList with all nodes in this layer
+        """
+        return NodeList(iter(self), fieldtypes=self.fieldtypes)
+
+    def validate(self):
+        for n in self:
+            for field, dtype in self.fieldtypes.items():
+                if field in n:
+                    assert dtype.is_valid(n[field]), \
+                        "Field %s, with value %s is not valid in node: %s" % \
+                        (field, repr(n[field]), repr(n))
+
+    def _repr_html_(self):
+        return self._table_repr_().render_html()
+
+    def __contains__(self, item):
+        return item in self.fieldtypes
+
+    def __iter__(self):
+        raise NotImplementedError
+
+    def __len__(self) -> int:
+        raise NotImplementedError
+
+    def __getitem__(self, item):
+        if isinstance(item, str):
+            assert item in self.fieldtypes, "Field not in this collection"
+            return NodeFieldCollection(self, item)
+        elif callable(item):
+            return NodeCollectionQuery(self, item)
+        else:
+            raise NotImplementedError("NodeCollections by default only support string indices for fields")
+
+
+class NodeFieldCollection(Sized):
+    """Field from a node collection"""
+    def __init__(self, collection: NodeCollection, field):
+        self.collection = collection
+        self.field = field
+
+    @property
+    def dtype(self):
+        """Get the DataType for this field"""
+        return self.collection.fieldtypes[self.field]
+
+    def _repr_html_(self):
+        pass
+
+    def __len__(self):
+        return len(self.collection)
+
+    def __iter__(self):
+        return map(lambda n: n.get(self.field), self.collection)
+
+    def __getitem__(self, item):
+        return self.collection[item][self.field]
+
+    def to_list(self):
+        """Convert this node field collection to a python list with field elements."""
+        return [v for v in self]
+
+    def filter(self, cond: Callable[[Any], bool]):
+        """
+        Generic filter function.
+
+        :param cond: a callable which will be given the value of this field, it is expected to match filter semantics.
+        :return: filter predicate
+        """
+        return NodeFieldPredicateLambda(self.field, cond)
+
+    def is_none(self):
+        """
+        Is none predicate, field value is none
+        :return: is none predicate
+        """
+        return self.filter(lambda v: v is None)
+
+    def has_value(self):
+        """
+        Has value predicate, does a field value exist
+        :return: has value predicate
+        """
+        return self.filter(None.__ne__)
+
+    def is_any(self, *item):
+        """
+        Is any of predicate, does field value exist in given items.
+
+        :param item: the items to verify against
+        :return: is any predicate
+        """
+        return NodeFieldPredicateContains(self, set(item))
+
+    def covered_by(self, *range):
+        """
+        Covered by predicate
+
+        :param range: tuple of start, stop
+        :return: covered by predicate
+        """
+        assert self.dtype.typename == DataTypeEnum.SPAN, "Not a textspan field: %s" % repr(self)
+        assert len(range) == 2, "range should be tuple of (start, stop)"
+        cover_span = tuple(range)
+        return self.filter(lambda span: span.covered_by(cover_span))
+
+    def intersected_by(self, *range):
+        """
+        Intersected by predicate
+
+        :param range: tuple of start, stop
+        :return: intersected by predicate
+        """
+        assert self.dtype.typename == DataTypeEnum.SPAN, "Not a textspan field: %s" % repr(self)
+        assert len(range) == 2, "range should be tuple of (start, stop)"
+        cover_span = tuple(range)
+        return self.filter(lambda span: span.intersected_by(cover_span))
+
+    def __gt__(self, other):
+        return NodeFieldPredicateGt(self, other)
+
+    def __le__(self, other):
+        return NodeFieldPredicateLe(self, other)
+
+    def __lt__(self, other):
+        return NodeFieldPredicateLt(self, other)
+
+    def __ge__(self, other):
+        return NodeFieldPredicateGe(self, other)
+
+    def __ne__(self, other):
+        return NodeFieldPredicateNeq(self, other)
+
+    def __eq__(self, other):
+        return NodeFieldPredicateEq(self, other)
+
+    def _table_repr_(self):
+        from docria.printout import Table, TableRow
+
+        table = Table(caption="Field %s in %s" % (self.field, repr(self.collection)))
+        table.set_header(self.field)
+
+        for v in self:
+            table.add_body(TableRow(v))
+
+        return table
+
+    def _repr_html_(self):
+        return self._table_repr_().render_html()
+
+    def __repr__(self):
+        return "NodeFieldCollection(%s, N=%d, collection=%s)" % (self.field, len(self), repr(self.collection))
+
+    def __str__(self):
+        return self._table_repr_().render_text()
+
+
+class NodeSpan(NodeCollection):
+    """Represents a span of nodes in a layer
+
+    .. automethod:: __getitem__
+    .. automethod:: __len__
+    """
+    def __init__(self, left_most_node: "Node", right_most_node: "Node"):
+        super().__init__(left_most_node.collection.schema.fields)
+        assert left_most_node is not None, "Left is None"
+        assert right_most_node is not None, "Right is None"
+        assert left_most_node.i <= right_most_node.i, "Nodes are not given in order!"
+        assert left_most_node.collection is right_most_node.collection, "Both nodes must reside in the same layer"
+        self.left = left_most_node
+        self.right = right_most_node
+
+    def __iter__(self):
+        assert self.left.i <= self.right.i, "Nodes have changed order, this NodeSpan is now invalid!"
+        return self.left.iter_span(self.right)
+
+    def text(self, field="text")->str:
+        """
+        Return text from left to right
+        :param field: the text span field to use
+        :return: string
+        """
+        left_span = self.left[field]  # type: TextSpan
+        right_span = self.right[field]  # type: TextSpan
+        return left_span.text_to(right_span)
+
+    def textspan(self, field="text"):
+        """
+        Return text from left to right
+        :param field: the text span field to use
+        :return: string
+        """
+        left_span = self.left[field]  # type: TextSpan
+        right_span = self.right[field]  # type: TextSpan
+        return left_span.span_to(right_span)
+
+    def _repr_html_(self):
+        return self._table_repr_(title="Node span with N=%d elements").render_html()
+
+    def __len__(self):
+        """Computes the number of nodes currently contained within this node span.
+
+        This function has complexity O(n)."""
+        return sum(1 for _ in self)
+
+    def __repr__(self):
+        fields = self.left.collection.schema.fields
+        if "text" in fields and fields["text"].typename == DataTypeEnum.SPAN:
+            return "NodeSpan[%s: %d to incl. %d] = %s" % (
+                self.left.collection.name, self.left.i, self.right.i, repr(self.text())
+            )
+        else:
+            return "NodeSpan[%s: %d to incl. %d]" % (self.left.collection.name, self.left.i, self.right.i)
+
+    def __str__(self):
+        tbl = self._table_repr_()
+        return tbl.render_text()
+
+
+class NodeList(list, NodeCollection):
+    """Python list enriched with extra indexing and presentation functionality for optimal use in Docria.
+
+    .. automethod:: __getitem__
+    """
+    def __init__(self, *elems, fieldtypes=None):
+        list.__init__(self, *elems)
+        assert all(map(lambda n: isinstance(n, Node), self)), "NodeList only accepts Node objects, received: %s" % list.__repr__(self)
+
+        if fieldtypes is None:
+            fields = {}
+            node_collections = set()
+            for n in self:
+                if n.collection is None:
+                    for fld, value in n.items():
+                        fields.setdefault(fld, set()).add(DataTypes.typeof(value))
+                else:
+                    node_collections.add(n.collection)
+
+            for nc in node_collections:
+                for fld, dtype in nc.fieldtypes.items():
+                    fields.setdefault(fld, set()).add(dtype)
+
+            output_types = {}
+            for fld, dtypes in fields.items():
+                if len(dtypes) > 1:
+                    if len(set(map(lambda dtype: dtype.typename, dtypes))) == 1:
+                        # Exactly the same type
+                        output_types[fld] = next(dtypes)
+                    else:
+                        resolved_type = None  # type: Optional[DataType]
+                        for el in dtypes:
+                            if resolved_type is None:
+                                resolved_type = el
+                            elif not resolved_type.cast_up_possible(el):
+                                raise ValueError("Could not merge field types: "
+                                                 "%s and %s for field '%s', collection %s" %
+                                                 (repr(resolved_type), repr(el), fld, repr(self)))
+                            else:
+                                resolved_type = resolved_type.cast_up(el)
+
+            NodeCollection.__init__(self, output_types)
+        else:
+            NodeCollection.__init__(self, fieldtypes)
+
+    def __iter__(self)->Iterator[Node]:
+        return super().__iter__()
+
+    def __getitem__(self, item):
+        """Get field value by nnam, node by index, new lists using standard slices or a list of indices"""
+        if isinstance(item, int):
+            return list.__getitem__(self, item)
+        elif isinstance(item, slice):
+            return NodeList(list.__getitem__(self, item), fieldtypes=self.fieldtypes)
+        elif isinstance(item, list):
+            getter = list.__getitem__
+            return NodeList(iter(getter(self, int(indx)) for indx in item), fieldtypes=self.fieldtypes)
+        else:
+            return NodeCollection.__getitem__(self, item)
+
+    def __repr__(self):
+        return repr(super())
 
     def _repr_html_(self):
         tbl = self._table_repr_()
@@ -175,9 +528,11 @@ class Offset:
 
 
 class TextSpan:
-    """Text span, consisting of a start and stop offset.
+    """
+    Text span, consisting of a start and stop offset.
 
-       Remarks: Use str(span) to get a real string.
+    :note:
+    Use str(span) to get a real string.
     """
     def __init__(self, text: "Text", start_offset: "Offset", stop_offset: "Offset"):
         self.text = text
@@ -198,8 +553,11 @@ class TextSpan:
     def __hash__(self):
         return hash((self.start_offset, self.stop_offset))
 
-    def __eq__(self, textrange):
-        return (self.start_offset, self.stop_offset) == (textrange.startOffset, textrange.stopOffset)
+    def __eq__(self, textrange: Union["TextSpan", str]):
+        if isinstance(textrange, TextSpan):
+            return (self.start, self.stop) == (textrange.start, textrange.stop)
+        else:
+            return str(self) == textrange
 
     def __getitem__(self, indx: Union[slice, Tuple[int, int], int]):
         if isinstance(indx, slice):
@@ -216,19 +574,124 @@ class TextSpan:
         else:
             raise ValueError("Unsupported input indx: %s" % repr(indx))
 
+    def text_to(self, right_span: "TextSpan")->str:
+        """
+        Helper function to return new TextSpan from this position to the given span
+        :param right_span: right most span
+        :return: TextSpan
+        """
+        return self.text.text[self.start:right_span.stop]
+
+    def span_to(self, right_span: "TextSpan")->"TextSpan":
+        """
+        Helper function to return new TextSpan from this position to the given span
+        :param right_span: right most span
+        :return: TextSpan
+        """
+        return self.text[self.start:right_span.stop]
+
+    def covered_by(self, span):
+        """
+        Checks if this span is covered by given span
+        :param span: the span to be covered by
+        :return: boolean indicating cover
+        """
+        if isinstance(span, TextSpan):
+            return span.start <= self.start and span.stop >= self.stop
+        elif isinstance(span, tuple):
+            start, stop = span
+            return start <= self.start and stop >= self.stop
+        else:
+            raise NotImplementedError("Unknown span type: %s" % repr(span))
+
+    def intersected_by(self, span):
+        """
+        Checks if this span is intersected by given span
+        :param span: the span to be intersected by
+        :return: boolean indicating intersection
+        """
+        if isinstance(span, TextSpan):
+            return span.stop > self.start and span.start < self.stop
+        elif isinstance(span, tuple):
+            start, stop = span
+            return stop > self.start and start < self.stop
+        else:
+            raise NotImplementedError("Unknown span type: %s" % repr(span))
+
+    def _trim_offsets(self):
+        """
+        Private function which finds trim offsets
+        :return: None if no new span or (start, stop) if new span
+        """
+        if len(self) == 0:
+            return None
+
+        new_start = self.start
+        new_stop = self.stop
+        if str.isspace(self.text.text[self.start]):
+            # move forward
+            for w in str(self):
+                if not str.isspace(w):
+                    break
+
+                new_start += 1
+        elif str.isspace(self.text.text[self.stop-1]):
+            # move backward
+            for i in range(len(self)-1, -1, -1):
+                if not str.isspace(self.text.text[new_stop-1]):
+                    break
+
+                new_stop -= 1
+
+        if new_stop <= new_start:
+            startoff = self.start_offset
+            stopoff = startoff
+
+        elif new_start != self.start or new_stop != self.stop:
+            startoff = self.text.offset(new_start)
+            stopoff = self.text.offset(new_stop)
+        else:
+            return None
+
+        return startoff, stopoff
+
+    def trim_(self):
+        """
+        Trim this span in-place by removing whitespace, move start forward,
+        stop backward until something which is not whitespace is encountered.
+        :return self
+        """
+        offs = self._trim_offsets()
+        if offs is not None:
+            self.start_offset, self.stop_offset = offs
+
+        return self
+
+    def trim(self):
+        """
+        Return trimmed span range by whitespace, move start forward,
+        stop backward until something which is not whitespace is encountered.
+        :return self or new instance if new span
+        """
+        offs = self._trim_offsets()
+        if offs is None:
+            return self
+        else:
+            return TextSpan(self.text, offs[0], offs[1])
+
     def __repr__(self):
         return "span(%s[%d:%d]) = %s" % (
             self.text.name,
             self.start_offset.offset,
             self.stop_offset.offset,
-            repr(self.text.text[self.start_offset.offset:self.stop_offset.offset])
+            repr(self.text.text[self.start:self.stop])
         )
 
     def __iter__(self):
         return iter(str(self))
 
     def __str__(self):
-        return self.text.text[self.start_offset.offset:self.stop_offset.offset]
+        return self.text.text[self.start:self.stop]
 
 
 class Text:
@@ -236,7 +699,7 @@ class Text:
     def __init__(self, name, text):
         self.name = name
         self.text = text
-        self.spantype = DataType(TEnum.SPAN, context=self.name)
+        self.spantype = DataType(DataTypeEnum.SPAN, context=self.name)
         self._offsets = {}  # type: Dict[int, Offset]
 
     def reset_counter(self):
@@ -269,6 +732,9 @@ class Text:
     def __str__(self):
         """Convert to string"""
         return self.text
+
+    def __len__(self):
+        return len(self.text)
 
     def __iter__(self):
         return iter(self.text)
@@ -310,6 +776,9 @@ class Text:
 
         return output
 
+    def offset(self, indx):
+        return self._offsets.setdefault(indx, Offset(indx))
+
     def __getitem__(self, indx):
         """Get a slice of the text"""
         if isinstance(indx, slice):
@@ -327,8 +796,8 @@ class Text:
                 raise DataValidationError("Out of bounds: [%d, %d), "
                                           "text length: %d" % (indx.start, indx.stop, len(self.text)))
 
-            start_offset = self._offsets.setdefault(start, Offset(start))
-            stop_offset = self._offsets.setdefault(stop, Offset(stop))
+            start_offset = self.offset(start)
+            stop_offset = self.offset(stop)
             return TextSpan(self, start_offset, stop_offset)
         elif isinstance(indx, tuple) and len(indx) == 2:
             start = int(indx[0])
@@ -342,8 +811,8 @@ class Text:
                 raise DataValidationError("Out of bounds: [%d, %d), "
                                           "text length: %d" % (start, stop, len(self.text)))
 
-            start_offset = self._offsets.setdefault(start, Offset(start))
-            stop_offset = self._offsets.setdefault(stop, Offset(stop))
+            start_offset = self.offset(start)
+            stop_offset = self.offset(stop)
             return TextSpan(self, start_offset, stop_offset)
         elif isinstance(indx, int):
             return self.text[indx]
@@ -352,6 +821,7 @@ class Text:
 
 
 class ExtData:
+    """User-defined typed data container"""
     def __init__(self, type, data):
         self.type = type
         self.data = data
@@ -366,7 +836,7 @@ class ExtData:
         return self.data
 
 
-class TEnum(Enum):
+class DataTypeEnum(Enum):
     """Type names"""
     UNKNOWN = 0  # unsupported for serialization
     I32 = 1
@@ -379,32 +849,35 @@ class TEnum(Enum):
     NODEREF_MANY = 8
     SPAN = 9
     EXT = 10
+    NODEREF_SPAN = 11
 
 
 # String conversion of enum.
 DataType2String = {
-    TEnum.I32: "i32",
-    TEnum.I64: "i64",
-    TEnum.F64: "f64",
-    TEnum.BOOL: "i1",
-    TEnum.STRING: "str",
-    TEnum.BINARY: "bin",
-    TEnum.NODEREF: "noderef",
-    TEnum.NODEREF_MANY: "noderef_array",
-    TEnum.SPAN: "span",
-    TEnum.EXT: "ext"
+    DataTypeEnum.I32: "i32",
+    DataTypeEnum.I64: "i64",
+    DataTypeEnum.F64: "f64",
+    DataTypeEnum.BOOL: "i1",
+    DataTypeEnum.STRING: "str",
+    DataTypeEnum.BINARY: "bin",
+    DataTypeEnum.NODEREF: "noderef",
+    DataTypeEnum.NODEREF_MANY: "noderef_array",
+    DataTypeEnum.SPAN: "span",
+    DataTypeEnum.EXT: "ext",
+    DataTypeEnum.NODEREF_SPAN: "nodespan"
 }
 
 DataType2PyType = {
-    TEnum.I32: int,
-    TEnum.I64: int,
-    TEnum.F64: float,
-    TEnum.BOOL: bool,
-    TEnum.STRING: str,
-    TEnum.BINARY: bytes,
-    TEnum.NODEREF: Node,
-    TEnum.SPAN: TextSpan,
-    TEnum.EXT: ExtData
+    DataTypeEnum.I32: int,
+    DataTypeEnum.I64: int,
+    DataTypeEnum.F64: float,
+    DataTypeEnum.BOOL: bool,
+    DataTypeEnum.STRING: str,
+    DataTypeEnum.BINARY: bytes,
+    DataTypeEnum.NODEREF: Node,
+    DataTypeEnum.SPAN: TextSpan,
+    DataTypeEnum.EXT: ExtData,
+    DataTypeEnum.NODEREF_SPAN: NodeSpan
 }
 
 String2DataType = {v: k for k, v in DataType2String.items()}
@@ -412,10 +885,16 @@ String2DataType = {v: k for k, v in DataType2String.items()}
 
 class DataType:
     """Data type declaration"""
-    def __init__(self, typename: TEnum, **kwargs):
+    _type2priority = {DataTypeEnum.BOOL: 0, DataTypeEnum.I32: 1, DataTypeEnum.I64: 2, DataTypeEnum.F64: 3}
+    _priority2type = {DataTypeEnum.BOOL: 0, DataTypeEnum.I32: 1, DataTypeEnum.I64: 2, DataTypeEnum.F64: 3}
+
+    def __init__(self, typename: DataTypeEnum, **kwargs):
         self.typename = typename
         self.nativetype = DataType2PyType.get(typename, None)
         self.options = dict(kwargs)
+
+    def default(self):
+        return self.options.get("default")
 
     def encode(self):
         if len(self.options) > 0:
@@ -425,6 +904,38 @@ class DataType:
             }
         else:
             return DataType2String[self.typename]
+
+    def cast_up_possible(self, dtype: "DataType")->bool:
+        """Check if type can be merged with another type."""
+        if self.typename == dtype.typename:
+            return True
+        elif self.typename in {DataTypeEnum.BOOL, DataTypeEnum.I32, DataTypeEnum.I64, DataTypeEnum.F64}:
+            # BOOL < I32 < I64 < F64
+            return dtype.typename in {DataTypeEnum.I32, DataTypeEnum.I64, DataTypeEnum.F64, DataTypeEnum.BOOL}
+        else:
+            return False
+
+    def cast_up(self, dtype: "DataType")->"DataType":
+        """
+        Find the largest type capable of representing both.
+
+        :param dtype: type to cast
+
+        :return: self or dtype
+
+        :note:
+        String and numbers are not considered being equal.
+        """
+        assert self.typename in DataType._type2priority
+        assert dtype.typename in DataType._type2priority
+
+        if DataType._type2priority[self.typename] >= DataType._type2priority[dtype.typename]:
+            return self
+        else:
+            return dtype
+
+    def is_valid(self, value):
+        return True
 
     def __repr__(self):
         return "DataType(type=%s, options=%s)" % (
@@ -439,71 +950,220 @@ class DataType:
         return self is dt or (self.typename == dt.typename and self.options == dt.options)
 
 
+class DataTypeBool(DataType):
+    def __init__(self, typename: DataTypeEnum, **kwargs):
+        super().__init__(typename, **kwargs)
+
+    def is_valid(self, value)->bool:
+        return value is not None and isinstance(value, bool)
+
+
+class DataTypeInt32(DataType):
+    def __init__(self, typename: DataTypeEnum, **kwargs):
+        super().__init__(typename, **kwargs)
+
+    def is_valid(self, value)->bool:
+        return isinstance(value, int) and (-0x80000000 <= value <= 0x7FFFFFFF)
+
+
+class DataTypeInt64(DataType):
+    def __init__(self, typename: DataTypeEnum, **kwargs):
+        super().__init__(typename, **kwargs)
+
+    def is_valid(self, value)->bool:
+        return isinstance(value, int) and (-0x8000000000000000 <= value <= 0x7FFFFFFFFFFFFFFF)
+
+
+class DataTypeFloat(DataType):
+    def __init__(self, typename: DataTypeEnum, **kwargs):
+        super().__init__(typename, **kwargs)
+
+    def is_valid(self, value)->bool:
+        return isinstance(value, float)
+
+
+class DataTypeString(DataType):
+    def __init__(self, typename: DataTypeEnum, **kwargs):
+        super().__init__(typename, **kwargs)
+
+    def is_valid(self, value)->bool:
+        return isinstance(value, str) and len(value) < (2**31)
+
+
+class DataTypeBinary(DataType):
+    def __init__(self, typename: DataTypeEnum, **kwargs):
+        super().__init__(typename, **kwargs)
+
+    def is_valid(self, value)->bool:
+        return isinstance(value, bytes) and len(value) < (2**31)
+
+
+class DataTypeNodespan(DataType):
+    def __init__(self, typename: DataTypeEnum, **kwargs):
+        super().__init__(typename, **kwargs)
+
+    def is_valid(self, value)->bool:
+        return isinstance(value, NodeSpan) and \
+               value.left.collection is not None and \
+               value.right.collection is not None and \
+               value.left.collection.name == self.options["layer"] and \
+               value.right.collection.name == self.options["layer"] and \
+               value.left.i <= value.right.i
+
+
+class DataTypeTextspan(DataType):
+    def __init__(self, typename: DataTypeEnum, **kwargs):
+        super().__init__(typename, **kwargs)
+
+    def is_valid(self, value)->bool:
+        return isinstance(value, TextSpan) and \
+               value.text.name == self.options["context"]
+
+
+class DataTypeNoderef(DataType):
+    def __init__(self, typename: DataTypeEnum, **kwargs):
+        super().__init__(typename, **kwargs)
+
+    def is_valid(self, value)->bool:
+        return isinstance(value, Node) and \
+               value.collection is not None and \
+               value.collection.name == self.options["layer"]
+
+
+class DataTypeNoderefList(DataType):
+    def __init__(self, typename: DataTypeEnum, **kwargs):
+        super().__init__(typename, **kwargs)
+
+    def is_valid(self, value)->bool:
+        target_layer = self.options["layer"]
+        return (isinstance(value, list) or isinstance(value, NodeCollection)) and \
+               all(map(lambda n: n.collection is not None and n.collection.name == target_layer, value))
+
+
 class DataTypes:
     """Common datatypes and factory methods for parametrical types"""
-    float64 = DataType(TEnum.F64)
-    int32 = DataType(TEnum.I32)
-    int64 = DataType(TEnum.I64)
-    string = DataType(TEnum.STRING)
-    binary = DataType(TEnum.BINARY)
-    bool = DataType(TEnum.BOOL)
+    _float64 = DataTypeFloat(DataTypeEnum.F64, default=0)
+    _float64_raw = DataTypeFloat(DataTypeEnum.F64)
+    _int32 = DataTypeInt32(DataTypeEnum.I32, default=0)
+    _int32_raw = DataTypeInt32(DataTypeEnum.I32)
+    _int64 = DataTypeInt64(DataTypeEnum.I64, default=0)
+    _int64_raw = DataTypeInt64(DataTypeEnum.I64)
+    _string = DataTypeString(DataTypeEnum.STRING, default="")
+    _string_raw = DataTypeString(DataTypeEnum.STRING)
+    _bool = DataTypeBool(DataTypeEnum.BOOL, default=False)
+    _bool_raw = DataTypeBool(DataTypeEnum.BOOL)
+    binary = DataTypeBinary(DataTypeEnum.BINARY)
 
     @staticmethod
-    def span(context):
-        return DataType(TEnum.SPAN, context=context)
+    def int32(default: Optional[int]=0):
+        if default == 0:
+            return DataTypes._int32
+        elif default is None:
+            return DataTypes._int32_raw
+        else:
+            return DataTypeInt32(DataTypeEnum.I32, default=default)
+
+    @staticmethod
+    def int64(default: Optional[int]=0):
+        if default == 0:
+            return DataTypes._int64
+        elif default is None:
+            return DataTypes._int64_raw
+        else:
+            return DataTypeInt64(DataTypeEnum.I64, default=default)
+
+    @staticmethod
+    def float64(default: Optional[float]=0.0):
+        if default == 0.0:
+            return DataTypes._float64
+        elif default is None:
+            return DataTypes._float64_raw
+        else:
+            return DataTypeFloat(DataTypeEnum.F64, default=0.0)
+
+    @staticmethod
+    def string(default: Optional[str]=""):
+        if default == "":
+            return DataTypes._string
+        elif default is None:
+            return DataTypes._string_raw
+        else:
+            return DataType(DataTypeEnum.STRING, default=default)
+
+    @staticmethod
+    def bool(default: Optional[bool]=False):
+        if default == "":
+            return DataTypes._string
+        elif default is None:
+            return DataTypes._bool_raw
+        else:
+            return DataType(DataTypeEnum.BOOL, default=default)
+
+    boolean = bool
+
+    @staticmethod
+    def textspan(context="main"):
+        return DataTypeTextspan(DataTypeEnum.SPAN, context=context)
+
+    span = textspan
 
     @staticmethod
     def noderef(layer):
-        return DataType(TEnum.NODEREF, layer=layer)
+        return DataTypeNoderef(DataTypeEnum.NODEREF, layer=layer)
 
     @staticmethod
     def noderef_many(layer):
-        return DataType(TEnum.NODEREF_MANY, layer=layer)
+        return DataTypeNoderefList(DataTypeEnum.NODEREF_MANY, layer=layer)
+
+    @staticmethod
+    def nodespan(layer):
+        return DataTypeNodespan(DataTypeEnum.NODEREF_SPAN, layer=layer)
 
     @staticmethod
     def ext(typename):
-        return DataType(TEnum.EXT, type=typename)
+        return DataType(DataTypeEnum.EXT, type=typename)
 
     @staticmethod
     def matches(o, expected):
         return isinstance(o, expected) if expected is not None else None
 
     @staticmethod
-    def typeof(o, comparetype: "DataType"=None, fasttype=None) -> DataType:
+    def typeof(o, comparetype: "DataType"=None) -> DataType:
         if isinstance(o, str):
-            return DataTypes.string
+            return DataTypes.string()
         elif isinstance(o, int):
-            if comparetype is not None and comparetype.typename == TEnum.I32:
+            if comparetype is not None and comparetype.typename == DataTypeEnum.I32:
                 if -0x80000000 <= o <= 0x7FFFFFFF:
-                    return DataTypes.int32
+                    return DataTypes.int32()
                 else:
-                    return DataTypes.int64
+                    return DataTypes.int64()
             else:
-                return DataTypes.int64
+                return DataTypes.int64()
         elif isinstance(o, float):
-            return DataTypes.float64
+            return DataTypes.float64()
         elif isinstance(o, bool):
-            return DataTypes.bool
+            return DataTypes.bool()
         elif isinstance(o, bytes):
             return DataTypes.binary
         elif isinstance(o, TextSpan):
             return o.text.spantype
+        elif isinstance(o, NodeSpan):
+            return DataTypes.nodespan(o.left.collection.name)
         elif isinstance(o, Node):
             return o.collection.nodetype
         elif isinstance(o, list):
             if len(o) > 0 and not isinstance(o[0], Node):
                 raise ValueError("Unsupported type: %s" % type(o))
-            elif len(o) == 0 and comparetype is not None and comparetype.typename == TEnum.NODEREF_MANY:
+            elif len(o) == 0 and comparetype is not None and comparetype.typename == DataTypeEnum.NODEREF_MANY:
                 return comparetype
-            elif len(o) == 0:  # Is invalid in any case as the comparetype is unknown or not a list type.
-                return DataType(TEnum.UNKNOWN)
+            elif len(o) == 0:  # Assume an empty node list
+                return DataType(DataTypeEnum.NODEREF_MANY)
             else:
                 layer = o[0].collection
                 if sum(1 for n in o if isinstance(n, Node) and n.collection is layer) == len(o):
                     return DataTypes.noderef_many(layer.name)
                 else:
                     raise ValueError("Unsupported type: %s" % type(o))
-
         else:
             raise ValueError("Unsupported type: %s" % type(o))
 
@@ -519,15 +1179,19 @@ class NodeLayerSchema:
         self.name = name
         self.fields = {}  # type: Dict[str, DataType]
 
-    def add(self, name: str, fieldtype: "DataType"):
+    def add(self, name: str, fieldtype: Union[Callable, "DataType"]):
         if name in self.fields:
             raise ValueError("Field '%s' already exists on layer %s" % (name, self.name))
 
+        fieldtype = fieldtype() if callable(fieldtype) else fieldtype
+        assert isinstance(fieldtype, DataType), "Type of field '%s' is not a DataType, it is: %s" % \
+                                                (name, repr(fieldtype))
         self.fields[name] = fieldtype
         return self
 
     def set(self, **kwargs):
         for k, v in kwargs.items():
+            v = v() if callable(v) else v
             assert isinstance(v, DataType), "Type of field '%s' is not a DataType, it is: %s" % (k, repr(v))
 
             if k in self.fields:
@@ -538,68 +1202,186 @@ class NodeLayerSchema:
         return self
 
 
-class NodeLayerCollection:
-    """
-    Node collection, internally a skip-list which will compact when 25% of the list is empty.
-    """
+class NodeCollectionQuery(NodeCollection):
+    """Represents a query to document data"""
+    def __init__(self, collection, predicate):
+        self.collection = collection
+        self.predicate = predicate
+        self.result = [n for n in collection if predicate(n)]
+
+    def __iter__(self):
+        return iter(self.result)
+
+    def __len__(self):
+        return len(self.result)
+
+    def __getitem__(self, item):
+        if isinstance(item, str):
+            if item in self.collection.schema.fields:
+                return NodeFieldCollection(self, item)
+        else:
+            return super().__getitem__(item)
+
+    def update(self):
+        self.result = [n for n in self.collection if self.predicate(n)]
+
+    def __repr__(self):
+        return "NodeCollectionQuery(collection=%s, N=%d)" % (self.collection.name, len(self))
+
+    def _table_repr_(self):
+        from docria.printout import Table, TableRow, get_representation
+
+        cols = list(sorted(self.collection.schema.fields.keys()))
+        fields = list(sorted(self.collection.schema.fields.keys()))
+
+        table = Table(caption="Layer query for %s" % self.collection.name)
+        table.set_header(*cols)
+
+        for n in self.collection[self]:
+            fld_data = [n.get(fld, None) for fld in fields]
+            for i in range(len(fld_data)):
+                fld_data[i] = get_representation(fld_data[i])
+
+            table.add_body(TableRow(*fld_data, index="#%d" % n._id))
+
+        return table
+
+    def _repr_html_(self):
+        return self._table_repr_().render_html()
+
+
+class NodeLayerCollection(NodeCollection):
+    """Node collection, internally a list with gaps which will compact when 25% of the list is empty."""
     def __init__(self, schema: "NodeLayerSchema"):
+        super().__init__(schema.fields)
         self.nodetype = DataTypes.noderef(schema.name)
         self._schema = schema
-        self._nodes = []
+        self._nodes = []  # type: List[Node]
         self.num = 0
+        self._default_values = {}  # type: Dict[str, Any]
+        self._update_default_values()
 
     @property
-    def schema(self):
+    def schema(self)->"NodeLayerSchema":
+        """Get layer schema"""
         return self._schema
 
     @property
-    def name(self):
+    def name(self)->str:
+        """Name of layer"""
         return self.schema.name
 
+    def _update_default_values(self):
+        self._default_values = {field: typedef.default() for field, typedef in self.schema.fields.items() if
+                                typedef.default() is not None}
+
     def add_field(self, name: str, type: "DataType"):
+        """
+        Add new field to the schema
+
+        :param name: name of the field
+        :param type: type of the field
+
+        :raises SchemaValidationError if the field conflicts with existing field
+        """
         if name in self._schema.fields:
             raise SchemaValidationError("Cannot add field %s, it already exists!" % name)
 
         self._schema.add(name, type)
+        self._update_default_values()
 
-    def remove_field(self, name: str)->bool:
-        if name not in self._schema:
+    def remove_field(self, name: str, leave_data=False)->bool:
+        """
+        Remove existing field
+
+        :param name: the name of the field to remove
+        :param leave_data: leave any existing data in nodes, validation fails with default settings if not cleaned out.
+
+        :return: true if the field was remove, false if the field could not be found
+        """
+        if name not in self._schema.fields:
             return False
 
-        for n in self:
-            if name in n:
-                del n[name]
+        if not leave_data:
+            for n in self:
+                if name in n:
+                    del n[name]
 
         del self._schema.fields[name]
+        self._update_default_values()
         return True
 
-    def unsafe_initialize(self, nodes: List[Node]):
-        """Directly replaces all nodes with the provided list, no checks for performance.
+    def unsafe_initialize(self, nodes: List[Node])->"NodeLayerCollection":
+        """
+        Directly replaces all nodes with the provided list, no checks for performance.
 
-           Remarks: Only use this method if you know what you are doing!"""
+        :note:
+        **Unsafe**, used for direct initialization by codecs.
+
+        :return: self
+        """
 
         self.num = len(nodes)
         self._nodes = nodes
-        for node_id, node in zip(range(len(self._nodes)), self._nodes):
-            node._id = node_id
-            node.collection = self
+        return self
 
-    def validate(self, node: "Node"):
+    def validate(self, node: "Node")->bool:
         """Validate node against schema, will throw SchemaTypeError if not valid."""
         for field, fieldtype in self.schema.fields.items():
             if field in node:
-                if DataTypes.matches(node[field], fieldtype.nativetype):
-                    continue
-                else:
-                    try:
-                        valuetype = DataTypes.typeof(node[field], fieldtype)
-                        if valuetype != fieldtype:
-                            raise DataValidationError("Invalid node, typeof(%s) = %s does not match %s. Ref: %s" % (
-                                repr(node[field]), repr(valuetype), repr(fieldtype), repr(node)))
-                    except ValueError as e:
-                        raise DataValidationError("Found value which was not supported: "
-                                                  "%s, in layer %s, field %s, node with id: %d" %
-                                                  (node[field], node.collection.name, field, node._id)) from e
+                fieldvalue = node[field]
+                if not node.collection.fieldtypes[field].is_valid(fieldvalue):
+                    if fieldtype.typename == DataTypeEnum.NODEREF_SPAN:
+                        assert fieldvalue.left.collection is not None, \
+                            "Left node is removed in nodespan: " \
+                            "field '%s' in layer '%s' for node %s" % (field, self.name, repr(node))
+                        assert fieldvalue.right.collection is not None, \
+                            "Right node is removed in nodespan: " \
+                            "field '%s' in layer '%s' for node %s" % (field, self.name, repr(node))
+                        assert fieldvalue.left.collection.name == fieldtype.options["layer"], \
+                            "Left node does not match layer %s: " \
+                            "field '%s' in layer '%s' for node %s" \
+                            % (fieldtype.options["layer"], field, self.name, repr(node))
+                        assert fieldvalue.right.collection.name == fieldtype.options["layer"], \
+                            "Right node does not match layer %s: " \
+                            "field '%s' in layer '%s' for node %s" \
+                            % (fieldtype.options["layer"], field, self.name, repr(node))
+                        assert fieldvalue.left.i <= fieldvalue.right.i, \
+                            "Ordering is for this nodespan is invalid (%d, %d): " \
+                            "field '%s' in layer '%s' for node %s" % \
+                            (fieldvalue.left.i, fieldvalue.right.i, field, self.name, repr(node))
+                    elif fieldtype.typename == DataTypeEnum.NODEREF:
+                        assert fieldvalue.collection is not None, \
+                            "Node is removed: " \
+                            "field '%s' in layer '%s' for node %s" % (field, self.name, repr(node))
+                        assert fieldvalue.collection.name == fieldtype.options["layer"], \
+                            "Node does not match layer %s: " \
+                            "field '%s' in layer '%s' for node %s" \
+                            % (fieldtype.options["layer"], field, self.name, repr(node))
+                    elif fieldtype.typename == DataTypeEnum.NODEREF_MANY:
+                        assert isinstance(fieldvalue, list), "Not a node list: " \
+                                "field '%s' in layer '%s' for node %s" % (field, self.name, repr(node))
+                        for n in fieldvalue:
+                            assert isinstance(n, Node), "Not a node: " \
+                                "field '%s' in layer '%s' for node %s" % (field, self.name, repr(node))
+                            assert n.collection is not None, \
+                                "Node is removed: " \
+                                "field '%s' in layer '%s' for node %s" % (field, self.name, repr(node))
+                            assert n.collection.name == fieldtype.options["layer"], \
+                                "Node does not match layer %s: " \
+                                "field '%s' in layer '%s' for node %s" \
+                                % (fieldtype.options["layer"], field, self.name, repr(node))
+                    elif fieldtype.typename == DataTypeEnum.SPAN:
+                        assert fieldvalue.text.name == fieldtype.options["context"], \
+                            "Textspan does not match expceted context %s found %s: " \
+                            "field '%s' in layer '%s' for node %s" % \
+                            (fieldtype.options["context"], fieldvalue.text.name, field, self.name, repr(node))
+                    else:
+                        assert False, \
+                        "Invalid value in field %s, typeof(%s) does not match %s. Ref: %s" % \
+                        (field, repr(node[field]), repr(fieldtype), repr(node))
+
+                    return False
 
         return True
 
@@ -607,14 +1389,16 @@ class NodeLayerCollection:
         """
         Add node to this layer.
 
-        Example:
-          layer.add(field1="Data", field2=42, field3=text[0:12])
-          layer.add(node1, node2)
-          layer.add(*nodes)
-
         :param args: Node objects, if used then kwargs are ignored
         :param kwargs: create nodes from given properties, ignored if len(args) > 0
+
         :return: node if kwargs was used
+
+        :Example:
+        >>> layer = doc["layer-name"]  # type: NodeLayerCollection
+        >>> layer.add(field1="Data", field2=42, field3=text[0:12])
+        >>> layer.add(node1, node2)
+        >>> layer.add(*nodes)
         """
         if len(args) > 0:
             for n in args:
@@ -626,30 +1410,47 @@ class NodeLayerCollection:
                 else:
                     raise ValueError(n)
         else:
-            node = Node(**kwargs)
+            node = Node(self._default_values)
+            node.update(**kwargs)
             node._id = len(self._nodes)
             node.collection = self
+            assert self.validate(node), "Node not valid."
             self._nodes.append(node)
             self.num += 1
             return node
 
-    def add_many(self, nodes):
+    def add_many(self, nodes: Iterable["Node"], default_fill=True, full_validation=True):
         """
         Add many nodes
 
         :param nodes: list of node references to add
-        """
-        for n in nodes:
-            if n.collection is not None:
-                raise DataValidationError("Node in list is already bound to a collection: %s" % repr(n.collection))
+        :param default_fill: set to True if default values should be added to nodes
+        :param full_validation: set to True to do full field validation
 
-        num_nodes = self.num
-        for idval, node in zip(range(num_nodes, num_nodes+len(nodes)), nodes):
-            node._id = idval
+        :note:
+        If full_validation is set to True, it will first add all nodes, and then perform validation. \
+        Internal references between nodes in the nodes input is allowed.
+        """
+        start_pos = len(self._nodes)
+        for node in nodes:
+            assert isinstance(node, Node), "Got a node which is not a Node: %s" % repr(node)
+            assert node.collection is None, "Node is already bound to a collection: %s" % repr(node.collection)
+
+            node._id = len(self._nodes)
             node.collection = self
 
-        self.num += len(nodes)
-        self._nodes.extend(nodes)
+            self._nodes.append(node)
+            self.num += 1
+
+        if full_validation:
+            for node in nodes:
+                assert self.validate(node), "Node not valid"
+
+        if default_fill and len(self._default_values) > 0:
+            keys = set(self._default_values.keys())
+            for n in self._nodes[start_pos:]:
+                for missing_key in keys.difference(n.keys()):
+                    n[missing_key] = self._default_values[missing_key]
 
     def compact(self):
         """
@@ -671,15 +1472,24 @@ class NodeLayerCollection:
         # Trim it
         del self._nodes[i:]
 
+    def filter(self, *fields, fn):
+        """
+        Create a node filter predicate
+
+        :param fields: the fields for the predicate
+        :param pred: callable object which given values will return true/false
+        """
+        return NodeLambdaPredicate(fn, fields)
+
     def sort(self, keyfn):
         """
         Sort the nodes, rearrange the node reference order by the given key function
 
-        :param keyfn: a function which takes the node as input and returns the key to sort by.
+        :param keyfn: a function (input: Node) -> value to sort by.
         """
         self.compact()
         self._nodes.sort(key=keyfn)
-        for i, n in zip(range(len(self)),self):
+        for i, n in zip(range(len(self)), self):
             n._id = i
 
     def remove(self, node: Union["Node", Iterable["Node"]]):
@@ -720,17 +1530,17 @@ class NodeLayerCollection:
             self.compact()
 
     def retain(self, nodes: Iterable["Node"]):
-        """Remove all nodes not in the given list nodes"""
+        """Retain all nodes in the given list nodes, remove everything else."""
 
         try:
             for n in iter(nodes):
                 # Mark the nodes to retain
                 if n.collection is not self:
-                    raise ValueError("Node %s is not in this node collection %s" % (repr(n), self.name))
+                    raise ValueError("Node %s is not in this node collection '%s'" % (repr(n), self.name))
 
-                # Guards against duplicated node entry in nodes
+                # Guards against more than one reference to a node in nodes
                 if n._id >= 0:
-                    n._id = -n._id
+                    n._id = -(n._id + 1)  # add 1, otherwise zero fails.
 
         except TypeError:
             raise ValueError("Given nodes is not iterable.")
@@ -750,6 +1560,41 @@ class NodeLayerCollection:
         # Compact list
         del self._nodes[k:]
 
+    def left(self, n: "Node")->Optional["Node"]:
+        """:return: node to the left or lower index than given n or None if none available."""
+        assert n.collection is self, "Node is not in this collection"
+
+        for i in range(n.i-1, -1, -1):
+            if self._nodes[i] is not None:
+                return self._nodes[i]
+
+        return None
+
+    def right(self, n: "Node")->Optional["Node"]:
+        """:return: node to the right or larger index than given n or None if none available."""
+        assert n.collection is self, "Node is not in this collection"
+
+        for i in range(n.i+1, len(self._nodes)):
+            if self._nodes[i] is not None:
+                return self._nodes[i]
+
+        return None
+
+    def iter_nodespan(self, left_most: "Node", right_most: "Node")->Iterator["Node"]:
+        """
+        Iterator for node in given span
+
+        :param left_most: left most, lowest index node
+        :param right_most: right most, highest index node, inclusive.
+
+        :return: iterator yielding zero or more elements
+        """
+        assert left_most.i <= right_most.i, "Nodes not in order"
+        assert left_most.collection == right_most.collection and right_most.collection is self, \
+            "Collection did not match"
+
+        return filter(None.__ne__, map(self._nodes.__getitem__, range(left_most.i, right_most.i+1)))
+
     def __iter__(self)->Iterator[Node]:
         if self.num == len(self._nodes):
             return iter(self._nodes)
@@ -759,29 +1604,11 @@ class NodeLayerCollection:
     def __repr__(self):
         return "Layer(%s, N=%d)" % (self.name, self.num)
 
-    def _table_repr_(self):
-        from docria.printout import Table, TableRow, get_representation
-
-        cols = list(sorted(self.schema.fields.keys()))
-        fields = list(sorted(self.schema.fields.keys()))
-
-        table = Table(caption="Layer: %s" % self.name)
-        table.set_header(*cols)
-
-        for n in self:
-            fld_data = [n.get(fld, None) for fld in fields]
-            for i in range(len(fld_data)):
-                fld_data[i] = get_representation(fld_data[i])
-
-            table.add_body(TableRow(*fld_data, index="#%d" % n._id))
-
-        return table
-
     def _repr_html_(self):
-        return self._table_repr_().render_html()
+        return self._table_repr_("Layer '%s' with %%d nodes." % self.name).render_html()
 
     def __str__(self):
-        return self._table_repr_().render_text()
+        return self._table_repr_("Layer '%s' with %%d nodes." % self.name).render_text()
 
     def __len__(self):
         return self.num
@@ -795,14 +1622,12 @@ class NodeLayerCollection:
             else:
                 raise DataValidationError("Node is not part of this node collection '%s': %s" % (self.name, repr(item)))
         elif isinstance(item, slice):
-            return NodeList(n for n in filter(None.__ne__, self._nodes[item]))
-        elif isinstance(item, str):
-            raise ValueError("Unsupported indexing type: %s" % repr(type(item)))
+            return NodeList(iter(n for n in filter(None.__ne__, self._nodes[item])), fieldtypes=self._schema.fields)
         else:
-            try:
-                return NodeList(self[n] for n in iter(item))
-            except TypeError:
-                raise ValueError("Unsupported indexing type: %s" % repr(type(item)))
+            return super().__getitem__(item)
+
+    def _ipython_key_completions_(self):
+        return list(self.schema.fields.keys())
 
     def __delitem__(self, node: Union["Node", Iterable["Node"]]):
         self.remove(node)
@@ -816,6 +1641,8 @@ class NodeLayerCollection:
         :param fields:  which fields to include, by default all fields are included.
         :param materialize_spans: converts span fields to a materialized string
         :param include_ref_field: include the python node reference as __ref field in the dataframe.
+
+        :rtype: pandas.DataFrame
         :return: pandas.Dataframe with the contents of this layer
         """
         from pandas import DataFrame
@@ -828,7 +1655,7 @@ class NodeLayerCollection:
         if materialize_spans:
             data = {}
             for field, fieldtype in fields:
-                if fieldtype.typename == TEnum.SPAN:
+                if fieldtype.typename == DataTypeEnum.SPAN:
                     data[field] = [(str(n[field]) if field in n else None) for n in filter(None.__ne__, self._nodes)]
                 else:
                     data[field] = [n.get(field) for n in filter(None.__ne__, self._nodes)]
@@ -840,70 +1667,17 @@ class NodeLayerCollection:
 
         return DataFrame(data=data)
 
-    def to_list(self)->NodeList:
-        return NodeList(n for n in self._nodes if n is not None)
-
     def __contains__(self, item: Node):
         return item.collection is self
 
 
-def codec_encode_span(l, v: "TextSpan"):
-    if v is None:
-        l.append(None)
-        l.append(None)
-    else:
-        l.append(v.start_offset._id)
-        l.append(v.stop_offset._id)
-
-
-class Codec:
-    encoders = {
-        TEnum.I32: lambda l, v: l.append(None if v is None else int(v)),
-        TEnum.I64: lambda l, v: l.append(None if v is None else int(v)),
-        TEnum.F64: lambda l, v: l.append(None if v is None else float(v)),
-        TEnum.BOOL: lambda l, v: l.append(None if v is None else bool(v)),
-        TEnum.STRING: lambda l, v: l.append(None if v is None else str(v)),
-        TEnum.BINARY: lambda l, v: l.append(None if v is None else bytes(v)),
-        TEnum.NODEREF: lambda l, v: l.append(None if v is None else v._id),
-        TEnum.NODEREF_MANY: lambda l, v: l.append(None if v is None or len(v) == 0 else [n._id for n in v]),
-        TEnum.SPAN: codec_encode_span,
-    }
-
-    @staticmethod
-    def encode(doc: "Document", fail_on_extra_fields=True):
-        doc.compile(extra_fields_ok=fail_on_extra_fields)
-
-        texts = {}
-        types = {}
-        types_num_nodes = {}
-        schema = {}
-
-        for txt in doc.texts.values():
-            txt._gc()
-            texts[txt.name] = txt._compile()
-
-        # Encode types
-        for k, v in doc.layers.items():
-            propfields = {}
-            typeschema = {}
-            for field, fieldtype in v.schema.fields.items():
-                typeschema[field] = fieldtype.encode()
-                propvalues = []
-                encoder = Codec.encoders[fieldtype.typename]
-                for n in v:
-                    encoder(propvalues, n.get(field, None))
-
-                propfields[field] = propvalues
-
-            types_num_nodes[k] = v.num
-            
-            schema[k] = typeschema
-            types[k] = propfields
-
-        return texts, types, types_num_nodes, schema
-
-
 class Document:
+    """The document which contains all data
+
+    .. automethod:: __getitem__
+    .. automethod:: __delitem__
+    .. automethod:: __contains__
+    """
     def __init__(self, **kwargs):
         """
         Construct new document
@@ -915,20 +1689,41 @@ class Document:
         self.props = dict(kwargs)  # type: Dict[str, Any]
 
     @property
-    def text(self):
+    def text(self)->Dict[str, Text]:
+        """Text"""
         return self._texts
 
     @property
-    def texts(self):
+    def texts(self)->Dict[str, Text]:
+        """Alias for :meth:`~docria.Document.text`"""
         return self._texts
 
     @property
-    def layer(self):
+    def layer(self)->Dict[str, NodeLayerCollection]:
+        """Layer dict"""
         return self._layers
 
     @property
-    def layers(self):
+    def layers(self)->Dict[str, NodeLayerCollection]:
+        """Alias for :meth:`~docria.Document.layer`"""
         return self._layers
+
+    @property
+    def maintext(self)->Text:
+        return self._texts["main"]
+
+    @maintext.setter
+    def maintext(self, text: Union[str, Text]):
+        assert "main" not in self._texts, "It is not allowed to replace main as it may affect layers referencing it."
+
+        if isinstance(text, str):
+            maintext = Text("main", text)
+            self._texts["main"] = maintext
+        elif isinstance(text, Text):
+            assert text.name == "main", "Text is not named main"
+            self._texts["main"] = text
+        else:
+            raise ValueError("text is of unknown type: %s" % repr(type(text)))
 
     def add_text(self, name, text):
         """
@@ -976,7 +1771,7 @@ class Document:
         for k, v in self.layers.items():
             if k != name:
                 for fk, fv in v.schema.fields.items():
-                    if fv.typename == TEnum.NODEREF or fv.typename == TEnum.NODEREF_MANY:
+                    if fv.typename == DataTypeEnum.NODEREF or fv.typename == DataTypeEnum.NODEREF_MANY:
                         if fv.options["layer"] == name:
                             referencing_layer_field.setdefault(k, []).append(fk)
 
@@ -986,8 +1781,10 @@ class Document:
                     , referencing_layer_field.items())
             )
 
-            raise SchemaValidationError("Attempting to remove layer %s, but is referenced from layer(s)+field(s): %s"
+            raise DataValidationError("Attempting to remove layer %s, but is referenced from layer(s)+field(s): %s"
                                         % (name, layer_field_names))
+
+        del self.layers[name]
 
     def __repr__(self):
         return "Document(%d layers, %d texts%s)" % (
@@ -1017,7 +1814,7 @@ class Document:
         return "\n".join(output)
 
     def printschema(self):
-        """Prints the full schema of this document, containing layer fields and typing information"""
+        """Prints the full schema of this document to stdout, containing layer fields and typing information"""
         for k, v in sorted(self.layers.items(), key=lambda tup: tup[0]):
             print("[%s]" % k)
             max_length = max(map(len, v.schema.fields.keys()), default=0)
@@ -1064,6 +1861,7 @@ class Document:
         :param extra_fields_ok: ignores extra fields in node if set to True
         :param type_validation: do type validation, if set to False and type
                                 is not correct will result in undefined behaviour, possibly corrupt storage.
+
         :raises SchemaValidationError
         """
 
@@ -1076,22 +1874,22 @@ class Document:
         referenced_texts = set()
         for layer in self.layers.values():
             for field, fieldtype in layer.schema.fields.items():
-                if fieldtype.typename == TEnum.NODEREF or fieldtype.typename == TEnum.NODEREF_MANY:
-                    referenced_layers.add(fieldtype.options["layer"])
-                elif fieldtype.typename == TEnum.SPAN:
-                    referenced_texts.add(fieldtype.options["context"])
+                if fieldtype.typename in {DataTypeEnum.NODEREF, DataTypeEnum.NODEREF_MANY, DataTypeEnum.NODEREF_SPAN}:
+                    referenced_layers.add((fieldtype.options["layer"], (layer.name, field)))
+                elif fieldtype.typename == DataTypeEnum.SPAN:
+                    referenced_texts.add((fieldtype.options["context"], (layer.name, field)))
 
-        # Verify refernced layers
-        for layer in referenced_layers:
+        # Verify referenced layers
+        for layer, (src_layer, src_field) in referenced_layers:
             if layer not in self.layers:
                 raise SchemaError("Layer %s could not be found, "
-                                  "it was referenced by another layer." % layer)
+                                  "it was referenced by layer '%s' and field '%s'." % (layer, src_layer, src_field))
 
         # Verify referenced texts
-        for text in referenced_texts:
+        for text, (src_layer, src_field) in referenced_texts:
             if text not in self.texts:
                 raise SchemaError("Text with context '%s' could not be found, "
-                                  "it was referenced by another layer." % text)
+                                  "it was referenced by layer '%s' and field '%s'." % (text, src_layer, src_field))
 
         # Assign node ids and validate nodes
         for k, v in self.layers.items():
@@ -1100,6 +1898,7 @@ class Document:
 
             fieldtypes = v.schema.fields
 
+            v.compact()
             validate_fn = v.validate
             for n in v:
                 if type_validation:
@@ -1111,8 +1910,7 @@ class Document:
                             # Increase ref counts on span offsets (used to know which offsets to use)
                             fieldvalue.start_offset.incref()
                             fieldvalue.stop_offset.incref()
-                    else:
-                        if not extra_fields_ok:
+                    elif not extra_fields_ok:
                             key_set = set(n.keys())
                             key_set.difference_update(set(fieldtypes.keys()))
 
@@ -1120,5 +1918,3 @@ class Document:
                                 "Extra fields not declared in schema was found for layer %s, fields: %s" % (
                                     k, ", ".join(key_set)), key_set
                             )
-
-            v.compact()

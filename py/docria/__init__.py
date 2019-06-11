@@ -15,7 +15,7 @@
 # limitations under the License.
 #
 
-from docria.model import Document, Node, NodeList, DataTypes as T
+from docria.model import Document, Node, NodeList, NodeSpan, DataTypes as T
 from docria.storage import DocumentIO
 from docria.codec import MsgpackCodec
 from docria.printout import set_large_screen
