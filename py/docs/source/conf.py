@@ -24,9 +24,9 @@ copyright = '2019, Marcus Klang'
 author = 'Marcus Klang'
 
 # The short X.Y version
-version = ''
+version = '0.3.0'
 # The full version, including alpha/beta/rc tags
-release = '0.3.0'
+release = '0.3.0beta'
 
 
 # -- General configuration ---------------------------------------------------
