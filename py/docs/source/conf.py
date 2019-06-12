@@ -88,10 +88,8 @@ exclude_patterns = []
 pygments_style = None
 
 
+autodoc_default_flags = ['members', 'show-inheritance']
 autodoc_default_options = {
-    'members': True,
-    'show-inheritance': True,
-    'undoc-members': True,
     'special-members': '__init__',
     'exclude-members': '__weakref__'
 }
