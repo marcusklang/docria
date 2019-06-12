@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-"""Docria document model (**primary module for most users**)"""
+"""Docria document model ( **primary module** )"""
 
 from typing import Dict, List, Tuple, Callable, Any, Iterator, Iterable, Union, Set, Optional, Sized
 from enum import Enum

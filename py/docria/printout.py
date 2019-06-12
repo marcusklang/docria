@@ -22,6 +22,12 @@ import re
 
 
 class PrintOptions:
+    """
+    Presentation settings
+
+    :note:
+    Setting any setting to None will disable truncation for that aspect.
+    """
     def __init__(self):
         """The maximum number of nodes to output, -1 for infinite"""
 
@@ -32,11 +38,11 @@ class PrintOptions:
 
     @property
     def max_rows(self):
+        """Max number of rows, will truncate table if larger."""
         return self._max_rows
 
     @max_rows.setter
     def max_rows(self, max_rows):
-        """Max number of rows, will truncate table if larger."""
         if max_rows is None:
             self._max_rows = None
         elif max_rows <= 0:
@@ -46,11 +52,11 @@ class PrintOptions:
 
     @property
     def max_columns(self):
+        """Max number of columns to display"""
         return self._max_rows
 
     @max_columns.setter
     def max_columns(self, max_columns):
-        """Max number of columns to display"""
         if max_columns is None:
             self._max_columns = None
         elif max_columns <= 0:
@@ -60,11 +66,11 @@ class PrintOptions:
 
     @property
     def max_column_width(self):
+        """Max column width, the maximum number of characters to show inside a column, will truncate if larger."""
         return self._max_column_width
 
     @max_column_width.setter
     def max_column_width(self, max_column_width):
-        """Max column width, the maximum number of characters to show inside a column, will truncate if larger."""
         if max_column_width is None:
             self._max_column_width = None
         elif max_column_width <= 6:
@@ -74,12 +80,12 @@ class PrintOptions:
 
     @property
     def max_display_width(self):
+        """Max display width, the maximum number of characters in width for a
+           full table, columns will be wrapped if longer."""
         return self._max_display_width
 
     @max_display_width.setter
     def max_display_width(self, max_display_width):
-        """Max display width, the maximum number of characters in width for a
-           full table, columns will be wrapped if longer."""
         if max_display_width is None:
             self._max_display_width = None
         elif max_display_width <= 10:

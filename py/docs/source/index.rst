@@ -9,6 +9,7 @@ Docria
 
 .. toctree::
    :maxdepth: 3
+
    :caption: Contents:
 
 Docria provides a hypergraph document model implementation with a focus on \
@@ -74,6 +75,36 @@ The first steps
    for tok in tokens[tokens["uppercase"] == True]:
       print(tok["text"])
 
+Concepts
+--------
+
+The document model consists of the following concepts:
+
+ * **Document**: The overall container for everything (all nodes, layers, texts must be contained within)
+ * **Document properties**: a single dictionary per document to store metadata in.
+ * **Text**: The basic text representation, a wrapped string to track spans.
+ * **Text Spans**: Subsequence of a string, can always be converted into a hard string by using str(span)
+ * **Node Spans**: Start and stop node in a layer which will produce a sequence of nodes.
+ * **Layer**: Collection of nodes
+ * **Layer Schema**: Definition of field names and types when document is serialized
+ * **Node**: Single node with zero or more fields with values
+ * **Node fields**: Key, value pairs.
+
+.. code-block:: python
+
+    from docria.model import Document
+
+    doc = Document()
+    doc.maintext # alias to doc.text["main"] with special support for
+                 # creating a main text via doc.maintext = "string"
+
+    doc.props  # Document metadata dictionary
+    doc.layers # Layer dictionary, layer name to node layer collection
+    doc.layer  # Alias to above
+    doc.texts  # Text dictionary.
+    doc.text   # Alias to above
+
+
 Examples
 ========
 
@@ -121,6 +152,33 @@ Writing document collections
 
 The principle is mostly the same with :class:~`docria.storage.TarMsgpackWriter` with the
 exception it expects a filepath, not a filelike object.
+
+Reading and writing documents to bytes
+--------------------------------------
+.. code-block:: python
+
+    from docria.codec import MsgpackCodec, MsgpackDocument
+
+    binarydata = bytes()  # from any location
+    binarydata = io.BytesIO()  # or
+
+    # To decode into a document
+    doc = MsgpackCodec.decode(binarydata)
+
+    # To encode into a document
+    binarydata = MsgpackCodec.encode(doc)
+
+    # Access data without a full deserialization
+    rawdoc = MsgpackDocument(binarydata)
+    rawdow.properties()  # Document metadata as dictionary
+
+    # Document texts, dictionary name to list of strings
+    # (each segment which potentially has annotation) which can be joined to get the full text.
+    rawdoc.texts()
+
+    schema = rawdoc.schema() # advanced access to the contents of this document, lists layers and fields.
+
+    doc = rawdoc.document() # full document deserialization
 
 Layer and field query
 ---------------------
@@ -171,11 +229,20 @@ Layer and field query
        # iter_span is invariant to order, it will always produce low id to high id.
        print(NodeList(first_root.iter_span(tok))["text"].to_list())
 
+Change presentation settings
+----------------------------
+The settings used for pretty printing is controlled by the global variable :py:const:`docria.printout.options`
+which is a :py:class:`docria.printout.PrintOptions`.
+
+By convention pretty printing will output [layer name]#[internal id] where the internal id can be used to get the node.
+However, this id is only guaranteed to be static if the layer is not changed, if changed it is invalid.
+
+For references in general use the Node object.
 
 API Reference
 =============
 .. autosummary::
-    :toctree: generated
+    :toctree: .
 
    docria.model
    docria.algorithm
