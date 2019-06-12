@@ -15,7 +15,8 @@
 import os
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-
+print(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+print(os.listdir(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))))
 
 # -- Project information -----------------------------------------------------
 
@@ -78,8 +79,8 @@ exclude_patterns = []
 pygments_style = None
 
 
-autodoc_default_flags = ['members', 'show-inheritance']
-autosummary_generate = True
+#autodoc_default_flags = ['members', 'show-inheritance']
+#autosummary_generate = True
 
 
 # -- Options for HTML output -------------------------------------------------
