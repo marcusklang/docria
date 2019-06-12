@@ -1,5 +1,6 @@
 Docria
 ======
+[![Documentation Status](https://readthedocs.org/projects/docria/badge/?version=latest)](https://docria.readthedocs.io/en/latest/?badge=latest)
 
 Semi-structured document storage model library.
 
