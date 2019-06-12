@@ -88,7 +88,7 @@ exclude_patterns = []
 pygments_style = None
 
 
-#autodoc_default_flags = ['members', 'show-inheritance']
+autodoc_default_flags = ['members', 'show-inheritance']
 #autosummary_generate = True
 
 
