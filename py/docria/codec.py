@@ -30,13 +30,15 @@ class DataError(Exception):
         super().__init__(message)
 
 
-def _codec_encode_span(l, v: "TextSpan"):
-    if v is None:
-        l.append(None)
-        l.append(None)
-    else:
-        l.append(v.start_offset._id)
-        l.append(v.stop_offset._id)
+def _codec_encode_span(offset_mapping: Dict[int, int]):
+    def encoder(l, v: "TextSpan"):
+        if v is None:
+            l.append(None)
+            l.append(None)
+        else:
+            l.append(offset_mapping[v.start])
+            l.append(offset_mapping[v.stop])
+    return encoder
 
 
 class Codec:
@@ -56,7 +58,7 @@ class Codec:
 
     @staticmethod
     def encode(doc: "Document", doc_encoder, **kwargs):
-        doc.compile(**kwargs)
+        offset_mapping = doc.compile(**kwargs)
 
         texts = {}
         types = {}
@@ -64,8 +66,7 @@ class Codec:
         schema = {}
 
         for txt in doc.texts.values():
-            txt._gc()
-            texts[txt.name] = txt._compile()
+            texts[txt.name] = txt.compile(offset_mapping[txt.name][1])
 
         node_getter = Node.get
 
@@ -92,6 +93,10 @@ class Codec:
                             propvalues.append(None)
 
                         propvalues.append(None if extv is None else extv.encode())
+                elif fieldtype.typename == DataTypeEnum.SPAN:
+                    encoder = encoder(offset_mapping[fieldtype.options["context"]][0])
+                    for n in v:
+                        encoder(propvalues, node_getter(n, field, None))
                 else:
                     for n in v:
                         encoder(propvalues, node_getter(n, field, None))
@@ -239,8 +244,8 @@ class JsonCodec:
 
             fulltext = "".join(text)
 
-            textobj = doc.add_text(textname, fulltext)
-            text2offsets[textname] = textobj.initialize_offsets(offsets)
+            doc.add_text(textname, fulltext)
+            text2offsets[textname] = dict(zip(range(len(offsets)), offsets))
 
         all_nodes = {}
         types_num_nodes = docobj["num_nodes"]
@@ -381,6 +386,10 @@ class MsgpackDocument:
                 start_pos = layer_start + layer_len
 
             self._layers = layer_mapping
+
+    def binary(self)->bytes:
+        """Get this document as binary value"""
+        return self.rawdata.getvalue()
 
     def properties(self, *props):
         """Get document properties"""
@@ -682,8 +691,8 @@ class MsgpackCodec:
 
             fulltext = "".join(text)
 
-            textobj = doc.add_text(textname, fulltext)
-            text2offsets[textname] = textobj.initialize_offsets(offsets)
+            doc.add_text(textname, fulltext)
+            text2offsets[textname] = dict(zip(range(len(offsets)), offsets))
 
         return text2offsets
 

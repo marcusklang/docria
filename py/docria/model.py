@@ -563,24 +563,27 @@ class TextSpan:
     :note:
     Use str(span) to get a real string.
     """
-    def __init__(self, text: "Text", start_offset: "Offset", stop_offset: "Offset"):
+    def __init__(self, text: "Text", start_offset: int, stop_offset: int):
+        assert start_offset <= stop_offset, "start must be <= end"
         self.text = text
+        self._start = start_offset
+        self._stop = stop_offset
         self.start_offset = start_offset
         self.stop_offset = stop_offset
 
     @property
     def start(self)->int:
-        return int(self.start_offset)
+        return self._start
 
     @property
     def stop(self)->int:
-        return int(self.stop_offset)
+        return self._stop
 
     def __len__(self):
-        return int(self.stop_offset)-int(self.start_offset)
+        return self._stop-self._start
 
     def __hash__(self):
-        return hash((self.start_offset, self.stop_offset))
+        return hash((id(self.text), self._start, self._stop))
 
     def __eq__(self, textrange: Union["TextSpan", str]):
         if isinstance(textrange, TextSpan):
@@ -673,7 +676,7 @@ class TextSpan:
                 new_stop -= 1
 
         if new_stop <= new_start:
-            startoff = self.start_offset
+            startoff = self._start
             stopoff = startoff
 
         elif new_start != self.start or new_stop != self.stop:
@@ -692,7 +695,7 @@ class TextSpan:
         """
         offs = self._trim_offsets()
         if offs is not None:
-            self.start_offset, self.stop_offset = offs
+            self._start, self._stop = offs
 
         return self
 
@@ -711,8 +714,8 @@ class TextSpan:
     def __repr__(self):
         return "span(%s[%d:%d]) = %s" % (
             self.text.name,
-            self.start_offset.offset,
-            self.stop_offset.offset,
+            self._start,
+            self._stop,
             repr(self.text.text[self.start:self.stop])
         )
 
@@ -729,34 +732,6 @@ class Text:
         self.name = name
         self.text = text
         self.spantype = DataType(DataTypeEnum.SPAN, context=self.name)
-        self._offsets = {}  # type: Dict[int, Offset]
-
-    def reset_counter(self):
-        """
-        Resets the reference counter.
-        """
-        for v in self._offsets.values():
-            v._refcnt = 0
-
-    def initialize_offsets(self, offsets: List[int])->List[Offset]:
-        """
-        Unsafe direct initialization of offset objects, used by codecs.
-
-        :param offsets: the offset list
-        :return: list of offset objects
-        """
-        offset_objs = []  # type: List[Offset]
-        for off in offsets:
-            offobj = Offset(off)
-            self._offsets[off] = offobj
-            offset_objs.append(offobj)
-
-        if len(offset_objs) == 0 or offset_objs[-1].offset != len(self.text):
-            offobj = Offset(len(self.text))
-            self._offsets[offobj.offset] = offobj
-            offset_objs.append(offobj)
-
-        return offset_objs
 
     def __str__(self):
         """Convert to string"""
@@ -772,41 +747,27 @@ class Text:
         from html import escape
         return "<h3>Text: {0}</h3><pre>{1}</pre>".format(self.name, escape(self.text))
 
-    def _gc(self):
-        """Remove unused offsets. Assumes reference counter has been properly initialized."""
-        self._offsets = {k: v for k, v in self._offsets.items() if v._refcnt > 0}
-
-    def _compile(self):
+    def compile(self, offsets: List[int]):
         """
-        Compiles text objects for serialization, sets the offset _id field to match segment ids.
+        Compiles text for serialization
+
+        :type offsets: the offsets including 0 and length of text
         :return: List of segments
         """
-
-        for removeoff in [off for off in self._offsets.values() if off._refcnt == 0]:
-            del self._offsets[removeoff.offset]
-
-        if 0 not in self._offsets:
-            self._offsets[0] = Offset(0)
-
-        if len(self.text) not in self._offsets:
-            self._offsets[len(self.text)] = Offset(len(self.text))
-
-        offsets = sorted(self._offsets.values(), key=lambda off: off.offset)
 
         output = []
         for i in range(len(offsets)-1):
             start = offsets[i]
             stop = offsets[i+1]
 
-            start._id = i
-            output.append(self.text[start.offset:stop.offset])
-
-        offsets[-1]._id = len(offsets)-1
+            output.append(self.text[start:stop])
 
         return output
 
-    def offset(self, indx):
-        return self._offsets.setdefault(indx, Offset(indx))
+    def offset(self, indx)->int:
+        assert 0 <= indx <= len(self.text), "Offset %d not valid: " \
+                                            "outside acceptable range [0, %d]" % (indx, len(self.text))
+        return indx
 
     def __getitem__(self, indx):
         """Get a slice of the text"""
@@ -825,9 +786,7 @@ class Text:
                 raise DataValidationError("Out of bounds: [%d, %d), "
                                           "text length: %d" % (indx.start, indx.stop, len(self.text)))
 
-            start_offset = self.offset(start)
-            stop_offset = self.offset(stop)
-            return TextSpan(self, start_offset, stop_offset)
+            return TextSpan(self, start, stop)
         elif isinstance(indx, tuple) and len(indx) == 2:
             start = int(indx[0])
             stop = int(indx[1])
@@ -840,9 +799,7 @@ class Text:
                 raise DataValidationError("Out of bounds: [%d, %d), "
                                           "text length: %d" % (start, stop, len(self.text)))
 
-            start_offset = self.offset(start)
-            stop_offset = self.offset(stop)
-            return TextSpan(self, start_offset, stop_offset)
+            return TextSpan(self, start, stop)
         elif isinstance(indx, int):
             return self.text[indx]
         else:
@@ -1876,19 +1833,17 @@ class Document:
     def __contains__(self, item):
         return item in self._layers
 
-    def compile(self, extra_fields_ok=False, type_validation=True, **kwargs):
+    def compile(self, extra_fields_ok=False, type_validation=True, **kwargs)->\
+            Dict[str, Tuple[Dict[int, int], List[int]]]:
         """Compile the document, validates and assigns compacted ids to nodes (internal use)
 
         :param extra_fields_ok: ignores extra fields in node if set to True
         :param type_validation: do type validation, if set to False and type
                                 is not correct will result in undefined behaviour, possibly corrupt storage.
 
-        :raises SchemaValidationError
+        :returns: Dictionary of text id to Dict(offset, offset-id)
+        :raises SchemaValidationError:
         """
-
-        # Reset offset counters
-        for txt in self.texts.values():
-            txt.reset_counter()
 
         # Extract layer and text references
         referenced_layers = set()
@@ -1913,29 +1868,48 @@ class Document:
                                   "it was referenced by layer '%s' and field '%s'." % (text, src_layer, src_field))
 
         # Assign node ids and validate nodes
+        text_offsets = {k: set() for k, _ in self._texts.items()}
+
         for k, v in self.layers.items():
             for idref, n in zip(range(len(v)), v):
                 n._id = idref
 
             fieldtypes = v.schema.fields
+            fieldkeys = set(fieldtypes.keys())
 
             v.compact()
             validate_fn = v.validate
-            for n in v:
-                if type_validation:
+
+            # Validate nodes
+            if type_validation and not extra_fields_ok:
+                for n in v:
                     validate_fn(n)
 
-                for field, fieldvalue in n.items():
-                    if field in fieldtypes:
-                        if isinstance(fieldvalue, TextSpan):
-                            # Increase ref counts on span offsets (used to know which offsets to use)
-                            fieldvalue.start_offset.incref()
-                            fieldvalue.stop_offset.incref()
-                    elif not extra_fields_ok:
-                            key_set = set(n.keys())
-                            key_set.difference_update(set(fieldtypes.keys()))
+                    if not extra_fields_ok and len(set(n.keys()).difference(fieldkeys)) > 0:
+                        raise SchemaValidationError(
+                            "Extra fields not declared in schema was found for layer %s, fields: %s" % (
+                                k, ", ".join(set(n.keys()).difference(fieldkeys))), set(n.keys())
+                        )
 
-                            raise SchemaValidationError(
-                                "Extra fields not declared in schema was found for layer %s, fields: %s" % (
-                                    k, ", ".join(key_set)), key_set
-                            )
+            # Collect span offsets
+            for field, fieldtype in fieldtypes.items():
+                if fieldtype.typename == DataTypeEnum.SPAN:
+                    offsets = text_offsets[fieldtype.options["context"]]
+                    offset_add = offsets.add
+                    for n in v:
+                        if field in n:
+                            # Add offsets
+                            fieldvalue = n[field]
+                            offset_add(fieldvalue.start)
+                            offset_add(fieldvalue.stop)
+
+        text_offset_mapping = {}
+        for k, v in self._texts.items():
+            offsets = text_offsets[k]
+            offsets.add(0)
+            offsets.add(len(v.text))
+
+            sorted_offsets = sorted(offsets)
+            text_offset_mapping[k] = ({k: v for k, v in zip(sorted_offsets, range(len(offsets)))}, sorted_offsets)
+
+        return text_offset_mapping
