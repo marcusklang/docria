@@ -196,7 +196,7 @@ class NodeCollection(Sized):
     def __init__(self, fieldtypes: Dict[str, "DataType"]):
         self.fieldtypes = fieldtypes
 
-    def _table_repr_(self, title="Node collection with N=%d elements"):
+    def _table_repr_(self, title="Node collection with N=%d elements", offset=None):
         fields = self.fieldtypes.keys()
 
         fields = sorted(fields)
@@ -204,9 +204,14 @@ class NodeCollection(Sized):
         tbl = Table(title % len(self), hide_index=True)
 
         tbl.set_header(*fields)
-        for n in self:
-            values = list(map(lambda k: get_representation(n.get(k, None)), fields))
-            tbl.add_body(TableRow(*values))
+        if offset is not None:
+            for i, n in enumerate(self):
+                values = list(map(lambda k: get_representation(n.get(k, None)), fields))
+                tbl.add_body(TableRow(*values, index=i+offset))
+        else:
+            for n in self:
+                values = list(map(lambda k: get_representation(n.get(k, None)), fields))
+                tbl.add_body(TableRow(*values))
 
         return tbl
 
@@ -425,7 +430,7 @@ class NodeSpan(NodeCollection):
         return self.right
 
     def _repr_html_(self):
-        return self._table_repr_(title="Node span with N=%d elements").render_html()
+        return self._table_repr_(title="Node span with N=%d elements", offset=self.left.i).render_html()
 
     def __len__(self):
         """Computes the number of nodes currently contained within this node span.
