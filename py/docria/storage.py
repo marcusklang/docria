@@ -20,6 +20,8 @@ from io import BytesIO, RawIOBase, SEEK_SET, SEEK_CUR, SEEK_END
 from msgpack import Unpacker, Packer
 from typing import Optional, Callable, Dict, Union, List, Tuple
 import zlib
+import bz2
+import lzma
 from typing import Iterator
 import struct
 import importlib
@@ -236,21 +238,52 @@ class MsgpackDocumentBlock:
             return MsgpackDocument(data, ref=(self._position, blockpos))
 
 
-class BlockCodecs:
-    """Block compression codecs"""
-    NONE = ("none", lambda x: x, lambda x: x)
-    DEFLATE = ("zip", lambda x: zlib.compress(x), lambda x: zlib.decompress(x))
-    DEFLATE_SQUARED = ("zipsq",
-                       lambda x: zlib.compress(zlib.compress(x, level=zlib.Z_BEST_COMPRESSION)
-                                               , level=zlib.Z_BEST_COMPRESSION),
-                       lambda x: zlib.decompress(zlib.decompress(x)))
+class CompressionCodec:
+    def __init__(self, name, compress: Callable[[bytes],bytes], decompress: Callable[[bytes],bytes]):
+        self.name = name
+        self.compress = compress
+        self.decompress = decompress
 
 
-_Name2Codec = {
-    "none": BlockCodecs.NONE,
-    "zip": BlockCodecs.DEFLATE,
-    "zipsq": BlockCodecs.DEFLATE_SQUARED
-}
+_Name2Codec = {}
+
+
+def register_codec(name, compress: Callable[[bytes], bytes], decompress: Callable[[bytes], bytes]):
+    if name in _Name2Codec:
+        raise ValueError(f"Codec {name} already registered")
+    _Name2Codec[name] = CompressionCodec(name, compress, decompress)
+
+
+def unregister_codec(name):
+    del _Name2Codec[name]
+
+
+def get_codec(name, no_except=False)->Union[CompressionCodec, None]:
+    if not no_except:
+        if name not in _Name2Codec:
+            raise NotImplementedError(f"Codec {name} is not implemented.")
+
+    return _Name2Codec.get(name)
+
+
+register_codec("none", lambda x: x, lambda x: x)
+register_codec("zip", zlib.compress, zlib.decompress)
+register_codec("bzip2", bz2.compress, bz2.decompress)
+register_codec("zipsq", lambda x: zlib.compress(
+                    zlib.compress(x, level=zlib.Z_BEST_COMPRESSION), level=zlib.Z_BEST_COMPRESSION),
+               lambda x: zlib.decompress(zlib.decompress(x)))
+register_codec("lzma", lzma.compress, lzma.decompress)
+
+if _module_available("lz4.frame"):
+    try:
+        import lz4.frame
+        register_codec("lz4",
+                       lambda x: lz4.frame.compress(x,
+                                                    block_size= lz4.frame.BLOCKSIZE_MAX4MB,
+                                                    compression_level=lz4.frame.COMPRESSIONLEVEL_MAX),
+                       lz4.frame.decompress)
+    except ModuleNotFoundError:
+        pass
 
 
 class MsgpackDocumentReader:
@@ -265,11 +298,7 @@ class MsgpackDocumentReader:
         self.unpacker = Unpacker(self.inputio, raw=False)
 
         codecname = next(self.unpacker)
-        self.codec = _Name2Codec.get(codecname, None)
-        if self.codec is None:
-            raise ValueError("Unsupported codec: %s" % codecname)
-        else:
-            self.codec = self.codec[2]
+        self.codec = get_codec(codecname).decompress
 
         self.num_doc_per_block = next(self.unpacker)
         self.advanced = next(self.unpacker)
@@ -390,7 +419,7 @@ class DocumentReader:
 
 class MsgpackDocumentWriter:
     """Writer for the blocked MessagePack document file format"""
-    def __init__(self, outputio: RawIOBase, num_docs_per_block=128, codec=BlockCodecs.DEFLATE, **kwargs):
+    def __init__(self, outputio: RawIOBase, num_docs_per_block=128, codec=get_codec("zip"), **kwargs):
         """
         Primary constructor
 
@@ -403,7 +432,7 @@ class MsgpackDocumentWriter:
         self.packer = Packer(use_bin_type=True)
 
         self.outputio.write(b"Dmf1")
-        self.outputio.write(self.packer.pack(codec[0]))
+        self.outputio.write(self.packer.pack(codec.name))
         self.outputio.write(self.packer.pack(num_docs_per_block))
         self.outputio.write(self.packer.pack(False))
 
@@ -412,8 +441,8 @@ class MsgpackDocumentWriter:
 
         self.currentblock = BytesIO()
         self.current_block_count = 0
-        self.codec_name = codec[0]
-        self.codec = codec[1]  # type: Callable[[bytes], bytes]
+        self.codec_name = codec.name
+        self.codec = codec.compress  # type: Callable[[bytes], bytes]
         self.num_docs_per_block = num_docs_per_block
 
     def __enter__(self):
@@ -422,7 +451,7 @@ class MsgpackDocumentWriter:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
-    def write(self, doc: Document, **kwargs):
+    def write(self, doc: Union[Document,MsgpackDocument], **kwargs):
         """
         Write docria document
 
