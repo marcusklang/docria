@@ -253,7 +253,7 @@ class JsonCodec:
 
         for typename in schema.keys():
             num_nodes = types_num_nodes[typename]
-            nodes = [Node() for _ in range(num_nodes)]
+            nodes = [Node().with_id(i) for i in range(num_nodes)]
             all_nodes[typename] = nodes
 
             for col, typedef in schema[typename]:
@@ -304,6 +304,17 @@ class JsonCodec:
             # Create Node Type
             nt = NodeLayerSchema(typename)
             for col, typedef in schema[typename]:
+                nt.add(col, typedef)
+
+            layer = doc.add_layer(nt)
+            for n in all_nodes[typename]:
+                n.collection = layer
+
+            layer.unsafe_initialize(all_nodes[typename])
+
+        # Post-process layers
+        for typename in schema.keys():
+            for col, typedef in schema[typename]:
                 if typedef.typename == DataTypeEnum.NODEREF:
 
                     # Replace int placeholds with an actual node reference.
@@ -321,11 +332,16 @@ class JsonCodec:
                     for n in all_nodes[typename]:
                         if col in n:
                             n[col] = [target_nodes[n_item] for n_item in n[col]]
+                elif typedef.typename == DataTypeEnum.NODEREF_SPAN:
+                    # Replace [int, int] with NodeSpan(left, right) which are real node references
+                    target_type = typedef.options["layer"]
+                    target_nodes = all_nodes[target_type]
 
-                nt.add(col, typedef)
-
-            layer = doc.add_layer(nt)
-            layer.unsafe_initialize(all_nodes[typename])
+                    for n in all_nodes[typename]:
+                        if col in n:
+                            lst = n[col]
+                            left_i, right_i = lst[0], lst[0]+lst[1]  # Delta encoded length
+                            n[col] = NodeSpan(target_nodes[left_i], target_nodes[right_i])
 
         return doc
 
