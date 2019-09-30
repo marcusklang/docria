@@ -21,7 +21,8 @@ import json
 import logging
 from io import BytesIO, IOBase
 from typing import List, Dict, Tuple
-from base64 import standard_b64decode
+from base64 import standard_b64decode, standard_b64encode
+import re
 
 
 class DataError(Exception):
@@ -824,4 +825,223 @@ class MsgpackCodec:
 
         Codec.commit_layers(doc, types, schema, all_nodes)
         return doc
+
+
+class XmlCodec:
+    """XML Codec, only encoding support"""
+    _string_pattern = re.compile(r"[^\u0009\u000A\u000D\u0020-\uD7FF\uE000-\uFFFD\u10000-\u10FFFF]", re.UNICODE)
+
+    @staticmethod
+    def _string_encoder(s, repl=" "):
+        return XmlCodec._string_pattern.sub(repl, s)
+
+    """
+    Docria XML codec
+    """
+    encoders = {
+        DataTypeEnum.I32: lambda v: str(int(v)),
+        DataTypeEnum.I64: lambda v: str(int(v)),
+        DataTypeEnum.F64: lambda v: str(float(v)),
+        DataTypeEnum.BOOL: lambda v: str(bool(v)),
+        DataTypeEnum.STRING: lambda v: XmlCodec._string_encoder(v),
+        DataTypeEnum.BINARY: lambda v: standard_b64encode(bytes(v)),
+        DataTypeEnum.NODEREF: lambda v: str(v._id),
+        DataTypeEnum.NODEREF_MANY: lambda v: [str(n._id) for n in v],
+        DataTypeEnum.NODEREF_SPAN: lambda v: v
+    }
+
+    @staticmethod
+    def _ext_encoder(value):
+        extv = value
+        if extv is not None:
+            if isinstance(extv, bytes):
+                return extv
+            elif isinstance(extv, ExtData):
+                return extv.encode()
+            else:
+                raise ValueError("Incorrect value.")
+        else:
+            return None
+
+    @staticmethod
+    def _span_encoder(offset_mapping):
+        def encoder(span):
+            return offset_mapping, span
+
+        return encoder
+
+    @staticmethod
+    def encode_intermediate(doc, **kwargs):
+        """
+        Conversion of docria document into an intermediate form: texts, schema and layer data.
+
+        :param doc: docria document
+        :param kwargs: options for compile
+        :return:
+        """
+        offset_mapping = doc.compile(**kwargs)
+
+        texts = {}
+        layers = {}
+        schema = {}
+
+        for txt in doc.texts.values():
+            texts[txt.name] = txt.compile(offset_mapping[txt.name][1])
+
+        node_getter = Node.get
+
+        # Encode types
+        for k, v in doc.layers.items():
+            typeschema = {}
+
+            prop_encoder = {}
+            for field, fieldtype in v.schema.fields.items():
+                typeschema[field] = fieldtype.encode()
+
+                if fieldtype.typename == DataTypeEnum.EXT:
+                    prop_encoder[field] = XmlCodec._ext_encoder
+                elif fieldtype.typename == DataTypeEnum.SPAN:
+                    prop_encoder[field] = XmlCodec._span_encoder(offset_mapping[fieldtype.options["context"]][0])
+                else:
+                    prop_encoder[field] = XmlCodec.encoders[fieldtype.typename]
+
+            schema[k] = typeschema
+
+            layer_nodes = []
+
+            for n in v:
+                node_values = {}
+                for field, encoder in prop_encoder.items():
+                    res = node_getter(n, field, None)
+                    if res is not None:
+                        node_values[field] = encoder(res)
+
+                layer_nodes.append(node_values)
+
+            layers[k] = layer_nodes
+
+        return texts, schema, layers
+
+    @staticmethod
+    def encode_utf8string(doc: Document, **kwargs):
+        """
+        Encode docria document into an XML string.
+
+        :param doc: docria document
+        :param kwargs: additional options, see XmlCodec.encode_tree and XmlCodec.encode_intermediate for options.
+        :return:
+        """
+        tree = XmlCodec.encode_tree(doc, **kwargs)
+        from io import BytesIO
+        raw_output = BytesIO()
+        tree.write(raw_output, encoding="utf-8")
+        return raw_output.getvalue().decode("utf-8")
+
+    @staticmethod
+    def encode_tree(doc: Document, verbose=False, verbose_node_spans=False, document_id="", **kwargs)-> "xml.etree.ElementTree.ElementTree":
+        """
+        Encodes a docria document into an XML representation.
+
+        :param doc: docria document
+        :param verbose: add extra attributes to the XML data for readability and simpler tooling
+        :param verbose_node_spans: add extra nodes for each node, materializing the span for readability
+        :param document_id: the global unique document id
+        :param kwargs: additional optoins, see XmlCodec.encode_intermediate for options
+        :return:
+        """
+        import xml.etree.ElementTree as ET
+        texts, schema, layers = XmlCodec.encode_intermediate(doc, **kwargs)
+
+        if document_id != "":
+            document_node = ET.Element("document", {"{http://www.w3.org/XML/1998/namespace}id": document_id})
+            prefix = document_id + "."
+        else:
+            document_node = ET.Element("document")
+            prefix = ""
+
+        root = ET.ElementTree(element=document_node)
+
+        prop_node = ET.SubElement(document_node, "props")
+        for k, v in doc.props.items():
+            ET.SubElement(prop_node, "prop", {"key": k, "value": str(v)})
+
+        schema_node = ET.SubElement(document_node, "schema")
+        for layer, schemadef in schema.items():
+            layer_schema_node = ET.SubElement(schema_node, "define", {"layer": layer})
+            for field, fielddef in schemadef.items():
+                if isinstance(fielddef, dict):
+                    field_node = ET.SubElement(layer_schema_node, "field", {"name": field, "type": fielddef["type"]})
+                    for argk, argv in fielddef["args"].items():
+                        ET.SubElement(field_node, "arg", {"key": argk, "value": str(argv)})
+                else:
+                    ET.SubElement(layer_schema_node, "field", {"name": field, "type": fielddef})
+
+        texts_node = ET.SubElement(document_node, "texts")
+        for textk, textv in texts.items():
+            text_node = ET.SubElement(texts_node, "text", {"name": textk})
+            seps_node = ET.SubElement(text_node, "sep")
+            if verbose:
+                pos = 0
+                i = 0
+                for entry in textv:
+                    ET.SubElement(seps_node, "s", {"v": entry, "id": str(i), "start": str(pos), "stop": str(pos + len(entry))})
+                    pos += len(entry)
+                    i += 1
+
+                ET.SubElement(text_node, "raw", {"value": "".join(textv)})
+            else:
+                for entry in textv:
+                    ET.SubElement(seps_node, "s", {"v": entry})
+
+        layers_node = ET.SubElement(document_node, "layers")
+        for layerk, layerv in layers.items():
+            layer_node = ET.SubElement(layers_node, "layer", {"name": layerk})
+            for i, n in enumerate(layerv):
+                array_entries = {}
+                simple_entries = {}
+                text_entries = {}
+                embedded_entries = []
+                for fk, fv in n.items():
+                    if isinstance(fv, tuple):
+                        offset_mapping = fv[0]  # type: Dict[int,int]
+                        span = fv[1]  # type: TextSpan
+                        embedded_entries.append(
+                            ET.Element("d",
+                                          {"name": fk,
+                                           "from": str(offset_mapping[span.start]),
+                                           "until": str(offset_mapping[span.stop])
+                                          })
+                        )
+                        if verbose_node_spans:
+                            text_entries[fk] = XmlCodec._string_encoder(fv)
+                    elif isinstance(fv, NodeSpan):
+                        embedded_entries.append(
+                            ET.Element("d",
+                                          {"name": fk,
+                                           "from": fv.left.collection.name + "." + str(fv.left.i),
+                                           "to": fv.left.collection.name + "." + str(fv.right.i)})
+                        )
+                    elif isinstance(fv, list):
+                        array_entries[fk] = fv
+                    elif isinstance(fv, str):
+                        simple_entries[fk] = fv
+                    else:
+                        raise ValueError("Unsupported entry in output: %s, (%s)" % (repr(fv), type(fv)))
+
+                simple_entries["{http://www.w3.org/XML/1998/namespace}id"] = prefix + layerk + "." + str(i)
+
+                n_node = ET.SubElement(layer_node, "n", simple_entries)
+                for ee in embedded_entries:
+                    n_node.append(ee)
+
+                for ak, av in array_entries.items():
+                    array_node = ET.SubElement(n_node, "a", {"name": ak})
+                    for av_entry in av:
+                        ET.SubElement(array_node, "e", {"v": av_entry})
+
+                if verbose_node_spans and len(text_entries) > 0:
+                    for tk, tv in text_entries.items():
+                        ET.SubElement(n_node, "t", {"key": tk, "value": tv})
+
+        return root
 
