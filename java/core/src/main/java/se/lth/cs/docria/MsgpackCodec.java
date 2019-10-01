@@ -764,7 +764,8 @@ public class MsgpackCodec {
                 case NODE_SPAN:
                     for (int k = 0; k < numNodes; k++) {
                         if(!unpacker.tryUnpackNil()) {
-                            assert unpacker.unpackArrayHeader() == 2;
+                            int nh = unpacker.unpackArrayHeader();
+                            assert nh == 2;
                             int left = unpacker.unpackInt();
                             int right = unpacker.unpackInt()+left;
 

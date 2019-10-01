@@ -34,6 +34,10 @@ public class DocumentStreamReader {
     private int numDocsPerBlock;
 
     public DocumentStreamReader(InputStream inputStream) {
+        this(inputStream, null);
+    }
+
+    public DocumentStreamReader(InputStream inputStream, Function<byte[],byte[]> codecfn) {
         try {
             this.inputStream = inputStream;
             this.unpacker = MessagePack.newDefaultUnpacker(inputStream);
@@ -42,20 +46,25 @@ public class DocumentStreamReader {
                 throw new IOException("Incorrect header: Dmf1, found: " + new String(header, StandardCharsets.ISO_8859_1));
             }
 
-            String codec = this.unpacker.unpackString();
-            switch (codec) {
-                case "none":
-                    this.codec = x -> x;
-                    break;
-                case "zip":
-                    this.codec = DeflateCodec::decompress;
-                    break;
-                case "zipsq":
-                    this.codec = x -> DeflateCodec.decompress(DeflateCodec.decompress(x));
-                    break;
-                default:
-                    throw new UnsupportedOperationException("Unsupported codec: " + codec);
+            if(codecfn != null) {
+                this.codec = codecfn;
+            } else {
+                String codec = this.unpacker.unpackString();
+                switch (codec) {
+                    case "none":
+                        this.codec = x -> x;
+                        break;
+                    case "zip":
+                        this.codec = DeflateCodec::decompress;
+                        break;
+                    case "zipsq":
+                        this.codec = x -> DeflateCodec.decompress(DeflateCodec.decompress(x));
+                        break;
+                    default:
+                        throw new UnsupportedOperationException("Unsupported codec: " + codec);
+                }
             }
+
 
             this.numDocsPerBlock = this.unpacker.unpackInt();
             boolean advancedMode = this.unpacker.unpackBoolean();

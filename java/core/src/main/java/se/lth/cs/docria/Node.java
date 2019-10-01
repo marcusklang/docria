@@ -37,6 +37,10 @@ public class Node extends Value {
         this.data = new TreeMap<>();
     }
 
+    public int id() {
+        return this.id;
+    }
+
     public static class Builder {
         private final Layer layer;
         private TreeMap<String, Value> values = new TreeMap<>();
@@ -185,7 +189,14 @@ public class Node extends Value {
             } else {
                 sb.append(", ");
             }
-            sb.append(stringValueEntry.getKey()).append(" = ").append(stringValueEntry.getValue());
+            if(stringValueEntry.getValue().type().name() == DataTypeName.NODE) {
+                Node n = stringValueEntry.getValue().nodeValue();
+                sb.append(stringValueEntry.getKey()).append(" = ").append(n.layer().name()).append("#").append(n.id);
+            }
+            else {
+                sb.append(stringValueEntry.getKey()).append(" = ").append(stringValueEntry.getValue());
+            }
+
         }
         sb.append(")");
         return sb.toString();

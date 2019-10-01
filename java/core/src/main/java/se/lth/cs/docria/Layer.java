@@ -334,4 +334,9 @@ public class Layer extends AbstractCollection<Node> {
     public int size() {
         return size;
     }
+
+    @Override
+    public String toString() {
+        return "Layer " + name();
+    }
 }
