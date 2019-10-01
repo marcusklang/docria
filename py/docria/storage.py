@@ -760,9 +760,11 @@ def build_msgpack_directory_fileindex(path, *props, basepath=".", num_workers=No
     included with the document collection.
     """
     from multiprocessing import Pool, cpu_count
+    import re
+    namefilter = re.compile(r"^[^.]+?\.docria(\.(xz|bz2|z|lz4))?$")
 
     docria_files = [os.path.join(path, fpath) for fpath in os.listdir(path)
-                    if not fpath.startswith(".") and fpath.lower().endswith(".docria")]
+                    if namefilter.fullmatch(fpath) is not None]
     master_indx = DocumentIndex(basepath=basepath)
 
     proplist = list(props)
