@@ -53,7 +53,21 @@ public class NodeArrayValue extends Value {
 
     @Override
     public String stringValue() {
-        throw new UnsupportedOperationException();
+        StringBuilder sb = new StringBuilder();
+
+        if(nodes.length > 0) {
+            sb.append(nodes[0].layer().name());
+            sb.append("[");
+            sb.append(nodes[0].id());
+            for(int i = 1; i < nodes.length; i++) {
+                sb.append(",").append(nodes[i].id());
+            }
+        }
+        else {
+            sb.append("[");
+        }
+        sb.append("]");
+        return sb.toString();
     }
 
     @Override

@@ -3,6 +3,7 @@ package se.lth.cs.docria.values;
 import se.lth.cs.docria.*;
 
 import java.util.Collection;
+import java.util.Objects;
 
 public class DocumentValue extends ExtensionValue {
     private byte[] binaryDocument;
@@ -35,6 +36,11 @@ public class DocumentValue extends ExtensionValue {
     @Override
     public void visit(ValueVisitor visitor) {
         visitor.accept(this);
+    }
+
+    @Override
+    public String stringValue() {
+        return Objects.toString(documentValue().maintext());
     }
 
     public Document documentValue() {

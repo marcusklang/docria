@@ -263,12 +263,20 @@ public class Document {
         return texts.values();
     }
 
+    public boolean hasText(String name) {
+        return texts.containsKey(name);
+    }
+
     public Stream<Text> textStream() {
         return texts.values().stream();
     }
 
     public Layer layer(String name) {
         return layers.get(name);
+    }
+
+    public boolean hasLayer(String name) {
+        return layers.containsKey(name);
     }
 
     public static class Compiled {

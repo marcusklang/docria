@@ -42,10 +42,8 @@ public class Text implements CharSequence {
         return spantype;
     }
 
-    public Text(String name) {
-        this.name = name;
-        this.text = "";
-        this.spantype = DataTypes.span(this.name);
+    public Text(String text) {
+        this("main", text);
     }
 
     public Text(String name, String text) {
@@ -102,8 +100,8 @@ public class Text implements CharSequence {
 
         if(!sortedSet.contains(text.length())) {
             Offset stop = new Offset(text.length());
-            pos2Offset.put(0, stop);
-            sortedSet.add(0);
+            pos2Offset.put(text.length(), stop);
+            sortedSet.add(text.length());
         }
 
         List<String> positions = new ArrayList<>();
