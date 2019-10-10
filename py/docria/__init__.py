@@ -17,5 +17,5 @@
 
 from docria.model import Document, Node, NodeList, NodeSpan, DataTypes, DataTypes as T
 from docria.storage import DocumentIO
-from docria.codec import MsgpackCodec
+from docria.codec import MsgpackCodec, MsgpackDocument
 from docria.printout import set_large_screen

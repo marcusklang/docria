@@ -20,9 +20,10 @@ import msgpack
 import json
 import logging
 from io import BytesIO, IOBase
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, TYPE_CHECKING
 from base64 import standard_b64decode, standard_b64encode
 import re
+import xml.etree.ElementTree
 
 
 class DataError(Exception):
@@ -351,13 +352,29 @@ class MsgpackDocument:
     def __init__(self, rawdata, ref=None):
         self.ref = ref
         if isinstance(rawdata, bytes):
-            rawdata = BytesIO(rawdata)
+            self.rawdata = BytesIO(rawdata)
         elif isinstance(rawdata, IOBase):
-            pass
+            self.rawdata = rawdata
+        elif isinstance(rawdata, Document):
+            self.rawdata = BytesIO(MsgpackCodec.encode(rawdata))
+        else:
+            raise ValueError(f"Unsupported type for MsgpackDocument: {type(rawdata)}")
 
-        self.rawdata = rawdata
+        if self.rawdata.read(4) != b"DM_1":
+            raise ValueError("Magic bytes is not DM_1")
 
-        if rawdata.read(4) != b"DM_1":
+        self._read_state = 0
+        self._prop = None
+        self._texts = None
+        self._schema = None
+        self._layers = None
+
+    def __getstate__(self):
+        return {"doc": self.rawdata.getvalue(), "ref": self.ref}
+
+    def __setstate__(self, state):
+        self.rawdata = BytesIO(state["doc"])
+        if self.rawdata.read(4) != b"DM_1":
             raise ValueError("Magic bytes is not DM_1")
 
         self._read_state = 0

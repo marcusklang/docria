@@ -18,7 +18,7 @@
 import os
 from io import BytesIO, RawIOBase, SEEK_SET, SEEK_CUR, SEEK_END
 from msgpack import Unpacker, Packer
-from typing import Optional, Callable, Dict, Union, List, Tuple
+from typing import Optional, Callable, Dict, Union, List, Tuple, TYPE_CHECKING
 import zlib
 import bz2
 import lzma
@@ -248,10 +248,11 @@ class CompressionCodec:
 _Name2Codec = {}
 
 
-def register_codec(name, compress: Callable[[bytes], bytes], decompress: Callable[[bytes], bytes]):
+def register_codec(name, compress: Callable[[bytes], bytes], decompress: Callable[[bytes], bytes], codec_name=None):
     if name in _Name2Codec:
         raise ValueError(f"Codec {name} already registered")
-    _Name2Codec[name] = CompressionCodec(name, compress, decompress)
+
+    _Name2Codec[name] = CompressionCodec(codec_name if codec_name is not None else name, compress, decompress)
 
 
 def unregister_codec(name):
@@ -274,7 +275,7 @@ register_codec("zipsq", lambda x: zlib.compress(
                lambda x: zlib.decompress(zlib.decompress(x)))
 register_codec("lzma", lzma.compress, lzma.decompress)
 
-if _module_available("lz4.frame"):
+if not TYPE_CHECKING and _module_available("lz4.frame"):
     try:
         import lz4.frame
         register_codec("lz4",
@@ -282,6 +283,14 @@ if _module_available("lz4.frame"):
                                                     block_size= lz4.frame.BLOCKSIZE_MAX4MB,
                                                     compression_level=lz4.frame.COMPRESSIONLEVEL_MAX),
                        lz4.frame.decompress)
+    except ModuleNotFoundError:
+        pass
+
+    try:
+        import zstd
+        register_codec("zstd", lambda x: zstd.compress(x), zstd.decompress)
+        register_codec("zstd:high", lambda x: zstd.compress(x, 9), zstd.decompress, codec_name="zstd")
+        register_codec("zstd:ultra", lambda x: zstd.compress(x, 22), zstd.decompress, codec_name="zstd")
     except ModuleNotFoundError:
         pass
 
@@ -615,12 +624,27 @@ class DocumentIO:
 
 
 class MsgpackDocumentIO:
+    """
+    MessagePack Documnt I/O class
+    """
     @staticmethod
     def read(filepath, **kwargs)->MsgpackDocumentReader:
+        """
+        Read a document collection
+        :param filepath: the source filepath
+        :param kwargs: arguments for reading
+        :return: reader for collection
+        """
         return MsgpackDocumentIO.readfile(open(filepath, "rb"))
 
     @staticmethod
     def readfile(filelike, **kwargs)->MsgpackDocumentReader:
+        """
+        Read a document collection from file-like object
+        :param filelike: the file like reader
+        :param kwargs: arguments for reading
+        :return: reader for collection
+        """
         return MsgpackDocumentReader(filelike)
 
 
