@@ -9,7 +9,7 @@ import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
-public class NodeSpan extends Value {
+public class NodeSpan extends Value implements Iterable<Node> {
     protected final Node left;
     protected final Node right;
 
@@ -53,7 +53,9 @@ public class NodeSpan extends Value {
             int stop = stopSpan.stop();
             return startSpan.source().subSequence(start, stop).toString();
         } else {
-            return String.format("NodeSpan(left=%s, right=%s)", left, right);
+            return String.format("NodeSpan(left=%s, right=%s)",
+                                 left.isValid() ? left.layer.name() + "#" + left.id : "INVALID",
+                                 right.isValid() ? right.layer.name() + "#" + right.id : "INVALID");
         }
     }
 
@@ -65,5 +67,23 @@ public class NodeSpan extends Value {
     @Override
     public DataType type() {
         return DataTypes.nodespan(left.layer.name());
+    }
+
+    public Node getLeft() {
+        return left;
+    }
+
+    public Node getRight() {
+        return right;
+    }
+
+    @Override
+    public Iterator<Node> iterator() {
+        return left.layer.nodespan(left, right).iterator();
+    }
+
+    @Override
+    public void forEach(Consumer<? super Node> action) {
+        left.layer.nodespanForEach(action, left, right);
     }
 }

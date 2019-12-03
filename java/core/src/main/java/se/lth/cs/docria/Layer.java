@@ -90,7 +90,7 @@ public class Layer extends AbstractCollection<Node> {
     }
 
     /**
-     * @deprecated use {@link Node#builder(Layer) in combination with {@link Layer#add(Node)}}
+     * @deprecated use {@link Node#builder(Layer)} in combination with {@link Layer#add(Node)}}
      * @return
      */
     @Deprecated
@@ -206,27 +206,46 @@ public class Layer extends AbstractCollection<Node> {
 
     /**
      * Return a stream of the nodespan
-     * @param start the left node, node with lowest id
-     * @param stop the right node, node with highest id, inclusive.
+     * @param left the left node, node with lowest id
+     * @param right the right node, node with highest id, inclusive.
      * @return Stream of nodes in range
      */
-    public Stream<Node> nodespan(Node start, Node stop) {
-        Objects.requireNonNull(start);
-        Objects.requireNonNull(stop);
-        if(start.layer != this)
+    public Stream<Node> nodespan(Node left, Node right) {
+        Objects.requireNonNull(left);
+        Objects.requireNonNull(right);
+        if(left.layer != this)
             throw new DataInconsistencyException(
-                    String.format("Start node ( %s ) is not bound to this layer: %s", start, this));
+                    String.format("Start node ( %s ) is not bound to this layer: %s", left, this));
 
-        if(stop.layer != this)
+        if(right.layer != this)
             throw new DataInconsistencyException(
-                    String.format("Stop node ( %s ) is not bound to this layer: %s", stop, this));
+                    String.format("Stop node ( %s ) is not bound to this layer: %s", right, this));
 
-        if(start.id > stop.id)
+        if(left.id > right.id)
             throw new DataInconsistencyException(
-                    String.format("Start and stop are not in sequence: start.id = %d, stop.id = %d", start.id, stop.id)
+                    String.format("Start and stop are not in sequence: start.id = %d, stop.id = %d", left.id, right.id)
             );
 
-        return IntStream.range(start.id, stop.id+1).mapToObj(this.storage::get).filter(Objects::nonNull);
+        return IntStream.range(left.id, right.id+1).mapToObj(this.storage::get).filter(Objects::nonNull);
+    }
+
+    public void nodespanForEach(Consumer<? super Node> consumer, Node left, Node right) {
+        Objects.requireNonNull(left);
+        Objects.requireNonNull(right);
+        if(left.layer != this)
+            throw new DataInconsistencyException(
+                    String.format("Start node ( %s ) is not bound to this layer: %s", left, this));
+
+        if(right.layer != this)
+            throw new DataInconsistencyException(
+                    String.format("Stop node ( %s ) is not bound to this layer: %s", right, this));
+
+        if(left.id > right.id)
+            throw new DataInconsistencyException(
+                    String.format("Start and stop are not in sequence: start.id = %d, stop.id = %d", left.id, right.id)
+            );
+
+        IntStream.range(left.id, right.id+1).mapToObj(this.storage::get).filter(Objects::nonNull).forEach(consumer);
     }
 
     @Override

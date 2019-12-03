@@ -23,10 +23,11 @@ public class NullValue extends Value {
     }
 
     public static NullValue INSTANCE = new NullValue();
+    private static final DataType nullType = new DataType.Builder(DataTypeName.NULL).build();
 
     @Override
     public DataType type() {
-        throw new UnsupportedOperationException();
+        return nullType;
     }
 
     @Override

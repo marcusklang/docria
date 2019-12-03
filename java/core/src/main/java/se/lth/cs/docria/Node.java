@@ -104,6 +104,10 @@ public class Node extends Value {
             return put(fieldName, Values.get(value));
         }
 
+        public Builder put(String fieldName, Node left, Node right) {
+            return put(fieldName, new NodeSpan(left, right));
+        }
+
         public Node build() {
             if(!values.isEmpty())
                 instance.setData(values);

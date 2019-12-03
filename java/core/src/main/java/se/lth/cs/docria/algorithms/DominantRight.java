@@ -2,12 +2,11 @@ package se.lth.cs.docria.algorithms;
 
 import se.lth.cs.docria.Layer;
 import se.lth.cs.docria.Node;
+import se.lth.cs.docria.NodeSpan;
 import se.lth.cs.docria.Span;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 public class DominantRight {
     public static class Segment<T> {
@@ -94,15 +93,15 @@ public class DominantRight {
         return output;
     }
 
-    public static List<Node> resolve(Layer nodes, String spanfield) {
-        return resolve(() -> nodes.stream()
-                                  .map(n -> {
-                                        Span span = n.get(spanfield).spanValue();
-                                        return new Segment<>(span.start(), span.stop(), n);
-                                    }).iterator());
+
+    public static List<Node> resolveNodespans(Collection<Node> nodes, String nodespanField) {
+        return resolve(() -> nodes.stream().map(n -> {
+            NodeSpan span = n.get(nodespanField).nodeSpanValue();
+            return new Segment<>(span.getLeft().id(), span.getRight().id()+1, n);
+        }).iterator());
     }
 
-    public static List<Node> resolve(List<Node> nodes, String spanfield) {
+    public static List<Node> resolve(Collection<Node> nodes, String spanfield) {
         return resolve(() -> nodes.stream()
                                   .map(n -> {
                                       Span span = n.get(spanfield).spanValue();

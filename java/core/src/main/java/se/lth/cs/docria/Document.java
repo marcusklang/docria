@@ -190,7 +190,7 @@ public class Document {
                                     .fields()
                                     .values()
                                     .stream()
-                                    .anyMatch(dt -> dt.name() == DataTypeName.SPAN && dt.args().get("layer").stringValue().equals(layer.name()))
+                                    .anyMatch(dt -> dt.name() == DataTypeName.SPAN && dt.args().get("context").stringValue().equals(layer.name()))
                       ).collect(Collectors.toList());
 
         if(!fieldcascade && !layersWithReferentFields.isEmpty()) {
