@@ -736,7 +736,7 @@ class Text:
     def __init__(self, name, text):
         self.name = name
         self.text = text
-        self.spantype = DataType(DataTypeEnum.SPAN, context=self.name)
+        self.spantype = DataTypeTextspan(DataTypeEnum.SPAN, context=self.name)
 
     def __str__(self):
         """Convert to string"""
@@ -1349,8 +1349,12 @@ class NodeLayerCollection(NodeCollection):
                                 "field '%s' in layer '%s' for node %s" \
                                 % (fieldtype.options["layer"], field, self.name, repr(node))
                     elif fieldtype.typename == DataTypeEnum.SPAN:
+                        assert isinstance(fieldvalue, TextSpan), \
+                            "The span field '%s' was not set to a TextSpan, but: '%s'" % \
+                            (field, repr(fieldvalue))
+
                         assert fieldvalue.text.name == fieldtype.options["context"], \
-                            "Textspan does not match expceted context %s found %s: " \
+                            "Textspan does not match expected context %s found %s: " \
                             "field '%s' in layer '%s' for node %s" % \
                             (fieldtype.options["context"], fieldvalue.text.name, field, self.name, repr(node))
                     else:
