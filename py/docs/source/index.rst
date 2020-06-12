@@ -36,7 +36,7 @@ The first steps
 .. code-block:: python
 
    from docria.model import Document, DataTypes as T
-   import re
+   import regex as re
 
    # Stupid tokenizer
    tokenizer = re.compile(r"[a-zA-Z]+|[0-9]+|[^\s]")
@@ -45,9 +45,10 @@ The first steps
    doc = Document()
 
    # Create a new text context called 'main' with the text 'This code was written in Lund, Sweden.'
-   doc.maintext = "This code was written in Lund, Sweden.")
+   doc.maintext = "This code was written in Lund, Sweden."
    #               01234567890123456789012345678901234567
    #               0         1         2         3
+   main_text = doc.maintext
 
    # Create a new layer with fields: id, text and head.
    #
@@ -61,19 +62,19 @@ The first steps
    # Adding nodes: Solution 1
    i = 0
    for m in tokenizer.finditer(str(main_text)):
-     token_node = tokens.add(id=i, text=main_text[m.start():m.end()])
+       token_node = tokens.add(id=i, text=main_text[m.start():m.end()])
 
-     # Check if it is uppercase
-     token_node["uppercase"] = starts_with_uppercase.fullmatch(m.text()) is not None
-     i += 1
+       # Check if it is uppercase
+       token_node["uppercase"] = starts_with_uppercase.fullmatch(m[0]) is not None
+       i += 1
 
    # Reading nodes
    for tok in tokens:
-      print(tok["text"])
+       print(tok["text"])
 
    # Filtering, only uppercase tokens
    for tok in tokens[tokens["uppercase"] == True]:
-      print(tok["text"])
+       print(tok["text"])
 
 Concepts
 --------
