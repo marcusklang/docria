@@ -1093,21 +1093,26 @@ class DataTypes:
     boolean = bool
 
     @staticmethod
-    def textspan(context="main"):
-        return DataTypeTextspan(DataTypeEnum.SPAN, context=context)
+    def textspan(context: Union[str, Text] = "main"):
+        if isinstance(context, Text):
+            return context.spantype
+        elif isinstance(context, str):
+            return DataTypeTextspan(DataTypeEnum.SPAN, context=context)
+        else:
+            raise ValueError(context)
 
     span = textspan
 
     @staticmethod
-    def noderef(layer):
+    def noderef(layer: str):
         return DataTypeNoderef(DataTypeEnum.NODEREF, layer=layer)
 
     @staticmethod
-    def noderef_many(layer):
+    def noderef_many(layer: str):
         return DataTypeNoderefList(DataTypeEnum.NODEREF_MANY, layer=layer)
 
     @staticmethod
-    def nodespan(layer):
+    def nodespan(layer: str):
         return DataTypeNodespan(DataTypeEnum.NODEREF_SPAN, layer=layer)
 
     @staticmethod
