@@ -32,7 +32,10 @@ import time
 
 
 def _module_available(name):
-    return importlib.util.find_spec(name) is not None
+    try:
+        return importlib.util.find_spec(name) is not None
+    except ModuleNotFoundError:
+        return False
 
 
 class _BoundaryReader(RawIOBase):
@@ -286,6 +289,8 @@ if not TYPE_CHECKING and _module_available("lz4.frame"):
     except ModuleNotFoundError:
         pass
 
+
+if not TYPE_CHECKING and _module_available("zstd"):
     try:
         import zstd
         register_codec("zstd", lambda x: zstd.compress(x), zstd.decompress)
