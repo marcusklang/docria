@@ -1257,12 +1257,13 @@ class NodeLayerCollection(NodeCollection):
         self._default_values = {field: typedef.default() for field, typedef in self.schema.fields.items() if
                                 typedef.default() is not None}
 
-    def add_field(self, name: str, type: "DataType"):
+    def add_field(self, name: str, type: "DataType", init_with_default=True):
         """
         Add new field to the schema
 
         :param name: name of the field
         :param type: type of the field
+        :param init_with_default: set all existing nodes fields to default value
 
         :raises SchemaValidationError if the field conflicts with existing field
         """
@@ -1271,6 +1272,11 @@ class NodeLayerCollection(NodeCollection):
 
         self._schema.add(name, type)
         self._update_default_values()
+
+        # Set all current values to the default
+        defaultvalue = type.default()
+        for n in self:
+            n[name] = defaultvalue
 
     def remove_field(self, name: str, leave_data=False)->bool:
         """
