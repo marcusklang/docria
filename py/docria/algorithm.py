@@ -15,7 +15,7 @@
 # limitations under the License.
 #
 """Functions for various processing purposes"""
-from docria.model import Document, Node, NodeLayerCollection, DataTypeEnum, TextSpan
+from docria.model import Document, Node, NodeLayerCollection, DataTypeEnum, TextSpan, Text, TextSpan
 from typing import Set, List, Callable, Tuple, Dict, Optional, Iterator, Iterable, Any
 from collections import deque, namedtuple, defaultdict
 import functools
@@ -462,3 +462,62 @@ def dominant_right_span(nodes: Iterable[Node], spanfield: str="text")->List[Node
     """
     segments = [(n[spanfield].start, n[spanfield].stop, n) for n in nodes if spanfield in n]
     return dominant_right(segments)
+
+
+def sequence_to_textspans(token_sequence: List[str],
+                          text: Text,
+                          start_offset: int = 0,
+                          stop_offset: Optional[int] = None,
+                          k: int = 1)\
+        -> List[TextSpan]:
+    """
+    Convert a sequence of strings, e.g. produced by a tokenizer and return matching textspans in a raw text.
+
+    :param token_sequence: sequence of strings to find
+    :param text: the raw text to search in
+    :param start_offset: the starting offset, default is from the start
+    :param stop_offset: the stop offset, default is to the end
+    :param k: maximum number of tokens to skip to search for better matching tokens
+           (if a token is not present in text, k = 1 will test
+            one token ahead and if it is closed select this one instead)
+    :return: list of spans, the spans which could not be found will have zero length at last position
+    """
+
+    output = []
+    raw_text = str(text)[start_offset:] if stop_offset is None else str(text)[start_offset:stop_offset]
+    pos = 0
+    i = 0
+
+    while i < len(token_sequence):
+        location = raw_text.find(token_sequence[i], pos, stop_offset)
+        if location == -1:
+            # Zero length mapping
+            output.append(text[start_offset+pos:start_offset+pos])
+        else:
+            # Verify forward that none of the k forward can be found before (not <=, just <) this match
+            found_closer = False
+            for j in range(1, min(k+1, len(token_sequence)-i)):
+                cand_location = raw_text.find(token_sequence[i+j], pos, stop_offset)
+                if cand_location != -1 and cand_location < location:
+                    # Found something closer: Add zero length mappings for words in between.
+                    for ic in range(i, i+j):
+                        output.append(text[start_offset+pos:start_offset+pos])
+
+                    # Add our match
+                    output.append(text[(start_offset+cand_location):(start_offset+cand_location+len(token_sequence[i+j]))])
+
+                    # Move pos and i forward
+                    pos = cand_location + len(token_sequence[i+j])
+                    i = i + j
+
+                    found_closer = True
+                    break
+
+            if not found_closer:
+                # Standard match
+                output.append(text[(start_offset+location):(start_offset+location+len(token_sequence[i]))])
+                pos = location + len(token_sequence[i])
+
+        i += 1
+
+    return output

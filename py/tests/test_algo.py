@@ -1,5 +1,6 @@
 from docria import Document, DocumentIO
-from docria.algorithm import span_translate, group_by_span, dominant_right
+from docria.model import Text
+from docria.algorithm import span_translate, group_by_span, dominant_right, sequence_to_textspans
 from docria import T
 
 
@@ -117,3 +118,54 @@ def test_dominant_right():
     assert 6 in ids
     assert 8 in ids
 
+
+def test_token_sequence_to_textspans_01():
+    sequence = ["A", "B", "C", "D", "E"]
+    text = "AB CD. E"
+    spans = sequence_to_textspans(sequence, Text("test", text))
+
+    assert len(spans) == 5
+    assert spans[0].start == 0 and spans[0].stop == 1
+    assert spans[1].start == 1 and spans[1].stop == 2
+    assert spans[2].start == 3 and spans[2].stop == 4
+    assert spans[3].start == 4 and spans[3].stop == 5
+    assert spans[4].start == 7 and spans[4].stop == 8
+
+
+def test_token_sequence_to_textspans_02():
+    sequence = ["A", ".", "B", "C", "D", "E"]
+    text = "AB CD E"
+    spans = sequence_to_textspans(sequence, Text("test", text))
+
+    assert len(spans) == 6
+    assert spans[0].start == 0 and spans[0].stop == 1
+    assert spans[1].start == 1 and spans[1].stop == 1
+    assert spans[2].start == 1 and spans[2].stop == 2
+    assert spans[3].start == 3 and spans[3].stop == 4
+    assert spans[4].start == 4 and spans[4].stop == 5
+    assert spans[5].start == 6 and spans[5].stop == 7
+
+
+def test_token_sequence_to_textspans_03():
+    sequence = ["A", ".", "B", "C", "D", "E"]
+    text = "AB C.D. E"
+    spans = sequence_to_textspans(sequence, Text("test", text))
+
+    assert len(spans) == 6
+    assert spans[0].start == 0 and spans[0].stop == 1
+    assert spans[1].start == 1 and spans[1].stop == 1
+    assert spans[2].start == 1 and spans[2].stop == 2
+    assert spans[3].start == 3 and spans[3].stop == 4
+    assert spans[4].start == 5 and spans[4].stop == 6
+    assert spans[5].start == 8 and spans[5].stop == 9
+
+
+def test_token_sequence_to_textspans_04():
+    sequence = ["B", "C", "D"]
+    text = "ABCDEF"
+    spans = sequence_to_textspans(sequence, Text("test", text), start_offset=1, stop_offset=3)
+
+    assert len(spans) == 3
+    assert spans[0].start == 1 and spans[0].stop == 2
+    assert spans[1].start == 2 and spans[1].stop == 3
+    assert spans[2].start == 3 and spans[2].stop == 3
