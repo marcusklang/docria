@@ -387,6 +387,10 @@ class NodeFieldCollection(Sized):
 class NodeSpan(NodeCollection):
     """Represents a span of nodes in a layer
 
+    :param left_most_node: the node most to the left
+    :param right_most_node: the node most to the right
+
+    .. automethod:: __init__
     .. automethod:: __getitem__
     .. automethod:: __len__
     """
@@ -977,7 +981,7 @@ class DataTypeString(DataType):
     def __init__(self, typename: DataTypeEnum, **kwargs):
         super().__init__(typename, **kwargs)
 
-    def is_valid(self, value)->bool:
+    def is_valid(self, value) -> bool:
         return isinstance(value, str) and len(value) < (2**31)
 
 
@@ -1046,7 +1050,7 @@ class DataTypes:
     binary = DataTypeBinary(DataTypeEnum.BINARY)
 
     @staticmethod
-    def int32(default: Optional[int]=0):
+    def int32(default: Optional[int] = 0):
         if default == 0:
             return DataTypes._int32
         elif default is None:
@@ -1055,7 +1059,7 @@ class DataTypes:
             return DataTypeInt32(DataTypeEnum.I32, default=default)
 
     @staticmethod
-    def int64(default: Optional[int]=0):
+    def int64(default: Optional[int] = 0):
         if default == 0:
             return DataTypes._int64
         elif default is None:
@@ -1064,7 +1068,7 @@ class DataTypes:
             return DataTypeInt64(DataTypeEnum.I64, default=default)
 
     @staticmethod
-    def float64(default: Optional[float]=0.0):
+    def float64(default: Optional[float] = 0.0):
         if default == 0.0:
             return DataTypes._float64
         elif default is None:
@@ -1073,7 +1077,7 @@ class DataTypes:
             return DataTypeFloat(DataTypeEnum.F64, default=0.0)
 
     @staticmethod
-    def string(default: Optional[str]=""):
+    def string(default: Optional[str] = ""):
         if default == "":
             return DataTypes._string
         elif default is None:
@@ -1082,7 +1086,7 @@ class DataTypes:
             return DataType(DataTypeEnum.STRING, default=default)
 
     @staticmethod
-    def bool(default: Optional[bool]=False):
+    def bool(default: Optional[bool] = False):
         if default == "":
             return DataTypes._string
         elif default is None:
@@ -1104,16 +1108,31 @@ class DataTypes:
     span = textspan
 
     @staticmethod
-    def noderef(layer: str):
-        return DataTypeNoderef(DataTypeEnum.NODEREF, layer=layer)
+    def noderef(layer: Union[str, "NodeLayerCollection"]):
+        if isinstance(layer, NodeLayerCollection):
+            return DataTypeNoderef(DataTypeEnum.NODEREF, layer=layer.name)
+        elif isinstance(layer, str):
+            return DataTypeNoderef(DataTypeEnum.NODEREF, layer=layer)
+        else:
+            raise ValueError(layer)
 
     @staticmethod
     def noderef_many(layer: str):
-        return DataTypeNoderefList(DataTypeEnum.NODEREF_MANY, layer=layer)
+        if isinstance(layer, NodeLayerCollection):
+            return DataTypeNoderefList(DataTypeEnum.NODEREF_MANY, layer=layer.name)
+        elif isinstance(layer, str):
+            return DataTypeNoderefList(DataTypeEnum.NODEREF_MANY, layer=layer)
+        else:
+            raise ValueError(layer)
 
     @staticmethod
     def nodespan(layer: str):
-        return DataTypeNodespan(DataTypeEnum.NODEREF_SPAN, layer=layer)
+        if isinstance(layer, NodeLayerCollection):
+            return DataTypeNodespan(DataTypeEnum.NODEREF_SPAN, layer=layer.name)
+        elif isinstance(layer, str):
+            return DataTypeNodespan(DataTypeEnum.NODEREF_SPAN, layer=layer)
+        else:
+            raise ValueError(layer)
 
     @staticmethod
     def ext(typename):
@@ -1276,8 +1295,9 @@ class NodeLayerCollection(NodeCollection):
         if init_with_default:
             # Set all current values to the default
             defaultvalue = dtype.default()
-            for n in self:
-                n[name] = defaultvalue
+            if defaultvalue is not None:
+                for n in self:
+                    n[name] = defaultvalue
 
     def remove_field(self, name: str, leave_data=False)->bool:
         """
@@ -1321,6 +1341,12 @@ class NodeLayerCollection(NodeCollection):
                 fieldvalue = node[field]
                 if not node.collection.fieldtypes[field].is_valid(fieldvalue):
                     if fieldtype.typename == DataTypeEnum.NODEREF_SPAN:
+                        assert fieldvalue.left is not None, \
+                            "Left node is None: " \
+                            "field '%s' in layer '%s' for node %s" % (field, self.name, repr(node))
+                        assert fieldvalue.right is not None, \
+                            "Right node is None: " \
+                            "field '%s' in layer '%s' for node %s" % (field, self.name, repr(node))
                         assert fieldvalue.left.collection is not None, \
                             "Left node is removed in nodespan: " \
                             "field '%s' in layer '%s' for node %s" % (field, self.name, repr(node))

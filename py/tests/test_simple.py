@@ -206,6 +206,26 @@ def test_text():
     assert main_text[14:21][-1] == "n"
 
 
+def test_field_add():
+    doc = Document()
+    maintext = doc.add_text("main", "Lund")
+    token = doc.add_layer("token", id=T.int32, text=T.span(maintext))
+
+    token.add(id=1, text=maintext[0:1])
+    token.add(id=2, text=maintext[1:2])
+
+    token.add_field("head", T.noderef(token))
+
+    from functools import reduce
+    assert reduce(lambda x, y: x and y, map(lambda x: "head" not in x, token))
+
+    token.add_field("pos", T.string())
+    assert reduce(lambda x, y: x and y, map(lambda x: "pos" in x and x["pos"] == "", token))
+
+    token.add_field("is_upper", T.bool())
+    assert reduce(lambda x, y: x and y, map(lambda x: "is_upper" in x and x["is_upper"] == False, token))
+
+
 def test_typing():
     pass
 
