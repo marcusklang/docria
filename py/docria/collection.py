@@ -518,7 +518,7 @@ class TarMsgpackReader:
 
         :param inputpath: filepath to tar
         :param mode: the tarball reading mode, :meth:`tarfile.open`, \
-                     can be used to select bz2 \or lzma compression modes.
+                     can be used to select bz2 or lzma compression modes.
         """
         self.tarreader = tarfile.open(inputpath, mode=mode)
 

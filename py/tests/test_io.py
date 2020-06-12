@@ -15,7 +15,7 @@
 # limitations under the License.
 #
 from docria.model import Document, DataTypes as T
-from docria.storage import MsgpackDocumentWriter, _BoundaryWriter, _BoundaryReader, MsgpackDocumentReader
+from docria.collection import MsgpackDocumentWriter, _BoundaryWriter, _BoundaryReader, MsgpackDocumentReader
 import re
 import os
 
