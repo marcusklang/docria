@@ -9,6 +9,10 @@ docria.codec
 
    
    
+   
+
+   
+   
    .. rubric:: Classes
 
    .. autosummary::
@@ -18,6 +22,7 @@ docria.codec
       MsgpackCodec
       MsgpackDocument
       MsgpackDocumentExt
+      XmlCodec
    
    
 
@@ -30,3 +35,6 @@ docria.codec
       DataError
    
    
+
+
+

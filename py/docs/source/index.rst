@@ -24,11 +24,19 @@ Docria provides:
 Quickstart
 ==========
 
-To install the python version:
+To install the PyPI version:
 
 .. code-block:: bash
 
    pip install docria
+
+To install the development version:
+
+.. code-block:: bash
+
+   git clone https://github.com/marcusklang/docria
+   cd docria
+   pip install -e .
 
 
 The first steps
@@ -163,11 +171,13 @@ Reading and writing documents to bytes
     binarydata = bytes()  # from any location
     binarydata = io.BytesIO()  # or
 
-    # To decode into a document
-    doc = MsgpackCodec.decode(binarydata)
+    # To decode a msgpack document into a document
+    msgdoc = MsgpackDocument(binarydata)
+    doc = msgdoc.document()  # type: docria.model.Document
 
-    # To encode into a document
-    binarydata = MsgpackCodec.encode(doc)
+    # To encode a document into a msgpack document
+    msgdoc = MsgpackDocument(doc)
+    binarydata = msgdoc.binary()  # type: bytes
 
     # Access data without a full deserialization
     rawdoc = MsgpackDocument(binarydata)
@@ -240,23 +250,8 @@ However, this id is only guaranteed to be static if the layer is not changed, if
 
 For references in general use the Node object.
 
-API Reference
-=============
-.. autosummary::
-    :toctree: .
+.. include:: api.rst
 
-   docria.model
-   docria.algorithm
-   docria.codec
-   docria.storage
-   docria.printout
-
-
-.. include:: generated/docria.model.rst
-.. include:: generated/docria.algorithm.rst
-.. include:: generated/docria.codec.rst
-.. include:: generated/docria.storage.rst
-.. include:: generated/docria.printout.rst
 
 Indices and tables
 ==================

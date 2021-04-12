@@ -30,7 +30,7 @@ sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
 # -- Project information -----------------------------------------------------
 
 project = 'docria'
-copyright = '2019, Marcus Klang'
+copyright = '2021, Marcus Klang'
 author = 'Marcus Klang'
 
 # The short X.Y version

@@ -5,6 +5,10 @@ docria.printout
 
    
    
+   
+
+   
+   
    .. rubric:: Functions
 
    .. autosummary::
@@ -34,3 +38,6 @@ docria.printout
    
    
    
+
+
+

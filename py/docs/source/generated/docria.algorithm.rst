@@ -5,6 +5,10 @@ docria.algorithm
 
    
    
+   
+
+   
+   
    .. rubric:: Functions
 
    .. autosummary::
@@ -19,6 +23,7 @@ docria.algorithm
       get_prop
       group_by_span
       is_covered_by
+      sequence_to_textspans
       span_translate
    
    
@@ -30,3 +35,6 @@ docria.algorithm
    
    
    
+
+
+
