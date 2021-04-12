@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright 2018 Marcus Klang (marcus.klang@cs.lth.se)
+# Copyright 2021 Marcus Klang (marcus.klang@cs.lth.se)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -468,8 +468,7 @@ def sequence_to_textspans(token_sequence: List[str],
                           text: Text,
                           start_offset: int = 0,
                           stop_offset: Optional[int] = None,
-                          k: int = 1)\
-        -> List[TextSpan]:
+                          k: int = 1) -> List[TextSpan]:
     """
     Convert a sequence of strings, e.g. produced by a tokenizer and return matching textspans in a raw text.
 

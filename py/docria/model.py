@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright 2018 Marcus Klang (marcus.klang@cs.lth.se)
+# Copyright 2021 Marcus Klang (marcus.klang@cs.lth.se)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ from .query import *
 
 class SchemaValidationError(Exception):
     """Schema validation failed"""
+
     def __init__(self, message, fields):
         super().__init__(message)
         self.fields = fields
@@ -30,12 +31,14 @@ class SchemaValidationError(Exception):
 
 class SchemaError(Exception):
     """Failed to validate a part of the schema"""
+
     def __init__(self, message):
         super().__init__(message)
 
 
 class DataValidationError(Exception):
     """Failed to validate document"""
+
     def __init__(self, message):
         super().__init__(message)
 
@@ -76,6 +79,7 @@ class Node(dict):
     >>> print(node.keys())  # return set fields
     >>> print("pos" in node)  # check if pos field is set.
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._id = -1  # type: int
@@ -111,11 +115,11 @@ class Node(dict):
         """Remove itself from the document model"""
         self.collection.remove(self)
 
-    def is_dangling(self)->bool:
+    def is_dangling(self) -> bool:
         """Check if this node is dangling i.e. is not attached to an existing layer, possibly removed or never added."""
         return self.collection is None
 
-    def is_valid(self, noexcept=True)->bool:
+    def is_valid(self, noexcept=True) -> bool:
         """
         Validate this node against schema
 
@@ -148,12 +152,12 @@ class Node(dict):
         return tbl.render_text()
 
     @property
-    def left(self)->Union[None, "Node"]:
+    def left(self) -> Union[None, "Node"]:
         """Get the node left of this node"""
         return self.collection.left(self)
 
     @property
-    def right(self)->Union[None, "Node"]:
+    def right(self) -> Union[None, "Node"]:
         """Get the node right of this node"""
         return self.collection.right(self)
 
@@ -193,6 +197,8 @@ class Node(dict):
 
 
 class NodeCollection(Sized):
+    """Base class for all node collections"""
+
     def __init__(self, fieldtypes: Dict[str, "DataType"]):
         self.fieldtypes = fieldtypes
 
@@ -207,7 +213,7 @@ class NodeCollection(Sized):
         if offset is not None:
             for i, n in enumerate(self):
                 values = list(map(lambda k: get_representation(n.get(k, None)), fields))
-                tbl.add_body(TableRow(*values, index=i+offset))
+                tbl.add_body(TableRow(*values, index=i + offset))
         else:
             for n in self:
                 values = list(map(lambda k: get_representation(n.get(k, None)), fields))
@@ -215,7 +221,7 @@ class NodeCollection(Sized):
 
         return tbl
 
-    def to_list(self)->"NodeList":
+    def to_list(self) -> "NodeList":
         """
         Convert this collection to a NodeList containing all node references
 
@@ -264,6 +270,7 @@ class NodeCollection(Sized):
 
 class NodeFieldCollection(Sized):
     """Field from a node collection"""
+
     def __init__(self, collection: NodeCollection, field):
         self.collection = collection
         self.field = field
@@ -272,9 +279,6 @@ class NodeFieldCollection(Sized):
     def dtype(self):
         """Get the DataType for this field"""
         return self.collection.fieldtypes[self.field]
-
-    def _repr_html_(self):
-        pass
 
     def __len__(self):
         return len(self.collection)
@@ -394,6 +398,7 @@ class NodeSpan(NodeCollection):
     .. automethod:: __getitem__
     .. automethod:: __len__
     """
+
     def __init__(self, left_most_node: "Node", right_most_node: "Node"):
         super().__init__(left_most_node.collection.schema.fields)
         assert left_most_node is not None, "Left is None"
@@ -407,7 +412,7 @@ class NodeSpan(NodeCollection):
         assert self.left.i <= self.right.i, "Nodes have changed order, this NodeSpan is now invalid!"
         return self.left.iter_span(self.right)
 
-    def text(self, field="text")->str:
+    def text(self, field="text") -> str:
         """
         Return text from left to right
         :param field: the text span field to use
@@ -461,9 +466,11 @@ class NodeList(list, NodeCollection):
 
     .. automethod:: __getitem__
     """
+
     def __init__(self, *elems, fieldtypes=None):
         list.__init__(self, *elems)
-        assert all(map(lambda n: isinstance(n, Node), self)), "NodeList only accepts Node objects, received: %s" % list.__repr__(self)
+        assert all(map(lambda n: isinstance(n, Node),
+                       self)), "NodeList only accepts Node objects, received: %s" % list.__repr__(self)
 
         if fieldtypes is None:
             fields = {}
@@ -503,7 +510,7 @@ class NodeList(list, NodeCollection):
         else:
             NodeCollection.__init__(self, fieldtypes)
 
-    def __iter__(self)->Iterator[Node]:
+    def __iter__(self) -> Iterator[Node]:
         return super().__iter__()
 
     def __getitem__(self, item):
@@ -544,6 +551,7 @@ class NodeList(list, NodeCollection):
 
 class Offset:
     """Text offset object"""
+
     def __init__(self, offset: int):
         self._id = -1
         self._refcnt = 0
@@ -572,6 +580,7 @@ class TextSpan:
     :note:
     Use str(span) to get a real string.
     """
+
     def __init__(self, text: "Text", start_offset: int, stop_offset: int):
         assert start_offset <= stop_offset, "start must be <= end"
         self.text = text
@@ -581,15 +590,15 @@ class TextSpan:
         self.stop_offset = stop_offset
 
     @property
-    def start(self)->int:
+    def start(self) -> int:
         return self._start
 
     @property
-    def stop(self)->int:
+    def stop(self) -> int:
         return self._stop
 
     def __len__(self):
-        return self._stop-self._start
+        return self._stop - self._start
 
     def __hash__(self):
         return hash((id(self.text), self._start, self._stop))
@@ -606,16 +615,16 @@ class TextSpan:
                 raise NotImplementedError("Only step == 1 are supported.")
 
             start, stop, step = indx.indices(len(self))
-            return self.text[start+self.start:stop+self.start]
+            return self.text[start + self.start:stop + self.start]
         elif isinstance(indx, tuple) and len(indx) == 2:
-            return self.text[indx[0]+self.start:indx[1]+self.start]
+            return self.text[indx[0] + self.start:indx[1] + self.start]
         elif isinstance(indx, int):
-            start, stop, step = slice(indx, indx+1).indices(len(self))
-            return self.text.text[start+self.start]
+            start, stop, step = slice(indx, indx + 1).indices(len(self))
+            return self.text.text[start + self.start]
         else:
             raise ValueError("Unsupported input indx: %s" % repr(indx))
 
-    def text_to(self, right_span: "TextSpan")->str:
+    def text_to(self, right_span: "TextSpan") -> str:
         """
         Helper function to return new TextSpan from this position to the given span
         :param right_span: right most span
@@ -623,7 +632,7 @@ class TextSpan:
         """
         return self.text.text[self.start:right_span.stop]
 
-    def span_to(self, right_span: "TextSpan")->"TextSpan":
+    def span_to(self, right_span: "TextSpan") -> "TextSpan":
         """
         Helper function to return new TextSpan from this position to the given span
         :param right_span: right most span
@@ -676,10 +685,10 @@ class TextSpan:
                     break
 
                 new_start += 1
-        elif str.isspace(self.text.text[self.stop-1]):
+        elif str.isspace(self.text.text[self.stop - 1]):
             # move backward
-            for i in range(len(self)-1, -1, -1):
-                if not str.isspace(self.text.text[new_stop-1]):
+            for i in range(len(self) - 1, -1, -1):
+                if not str.isspace(self.text.text[new_stop - 1]):
                     break
 
                 new_stop -= 1
@@ -737,6 +746,7 @@ class TextSpan:
 
 class Text:
     """Text object, consisting of text and an index of current offsets"""
+
     def __init__(self, name, text):
         self.name = name
         self.text = text
@@ -765,15 +775,15 @@ class Text:
         """
 
         output = []
-        for i in range(len(offsets)-1):
+        for i in range(len(offsets) - 1):
             start = offsets[i]
-            stop = offsets[i+1]
+            stop = offsets[i + 1]
 
             output.append(self.text[start:stop])
 
         return output
 
-    def offset(self, indx)->int:
+    def offset(self, indx) -> int:
         assert 0 <= indx <= len(self.text), "Offset %d not valid: " \
                                             "outside acceptable range [0, %d]" % (indx, len(self.text))
         return indx
@@ -817,6 +827,7 @@ class Text:
 
 class ExtData:
     """User-defined typed data container"""
+
     def __init__(self, type, data):
         self.type = type
         self.data = data
@@ -900,7 +911,7 @@ class DataType:
         else:
             return DataType2String[self.typename]
 
-    def cast_up_possible(self, dtype: "DataType")->bool:
+    def cast_up_possible(self, dtype: "DataType") -> bool:
         """Check if type can be merged with another type."""
         if self.typename == dtype.typename:
             return True
@@ -910,7 +921,7 @@ class DataType:
         else:
             return False
 
-    def cast_up(self, dtype: "DataType")->"DataType":
+    def cast_up(self, dtype: "DataType") -> "DataType":
         """
         Find the largest type capable of representing both.
 
@@ -946,58 +957,72 @@ class DataType:
 
 
 class DataTypeBool(DataType):
-    def __init__(self, typename: DataTypeEnum, **kwargs):
-        super().__init__(typename, **kwargs)
+    """Boolean field type"""
 
-    def is_valid(self, value)->bool:
-        return value is not None and isinstance(value, bool)
-
-
-class DataTypeInt32(DataType):
-    def __init__(self, typename: DataTypeEnum, **kwargs):
-        super().__init__(typename, **kwargs)
-
-    def is_valid(self, value)->bool:
-        return isinstance(value, int) and (-0x80000000 <= value <= 0x7FFFFFFF)
-
-
-class DataTypeInt64(DataType):
-    def __init__(self, typename: DataTypeEnum, **kwargs):
-        super().__init__(typename, **kwargs)
-
-    def is_valid(self, value)->bool:
-        return isinstance(value, int) and (-0x8000000000000000 <= value <= 0x7FFFFFFFFFFFFFFF)
-
-
-class DataTypeFloat(DataType):
-    def __init__(self, typename: DataTypeEnum, **kwargs):
-        super().__init__(typename, **kwargs)
-
-    def is_valid(self, value)->bool:
-        return isinstance(value, float)
-
-
-class DataTypeString(DataType):
     def __init__(self, typename: DataTypeEnum, **kwargs):
         super().__init__(typename, **kwargs)
 
     def is_valid(self, value) -> bool:
-        return isinstance(value, str) and len(value) < (2**31)
+        return value is not None and isinstance(value, bool)
+
+
+class DataTypeInt32(DataType):
+    """Signed 32 bit integer field type"""
+
+    def __init__(self, typename: DataTypeEnum, **kwargs):
+        super().__init__(typename, **kwargs)
+
+    def is_valid(self, value) -> bool:
+        return isinstance(value, int) and (-0x80000000 <= value <= 0x7FFFFFFF)
+
+
+class DataTypeInt64(DataType):
+    """Signed 64 bit integer field type"""
+
+    def __init__(self, typename: DataTypeEnum, **kwargs):
+        super().__init__(typename, **kwargs)
+
+    def is_valid(self, value) -> bool:
+        return isinstance(value, int) and (-0x8000000000000000 <= value <= 0x7FFFFFFFFFFFFFFF)
+
+
+class DataTypeFloat(DataType):
+    """64 bit floating point (double) field type"""
+
+    def __init__(self, typename: DataTypeEnum, **kwargs):
+        super().__init__(typename, **kwargs)
+
+    def is_valid(self, value) -> bool:
+        return isinstance(value, float)
+
+
+class DataTypeString(DataType):
+    """String field type"""
+
+    def __init__(self, typename: DataTypeEnum, **kwargs):
+        super().__init__(typename, **kwargs)
+
+    def is_valid(self, value) -> bool:
+        return isinstance(value, str) and len(value) < (2 ** 31)
 
 
 class DataTypeBinary(DataType):
+    """Bytes field type, field with raw binary data"""
+
     def __init__(self, typename: DataTypeEnum, **kwargs):
         super().__init__(typename, **kwargs)
 
-    def is_valid(self, value)->bool:
-        return isinstance(value, bytes) and len(value) < (2**31)
+    def is_valid(self, value) -> bool:
+        return isinstance(value, bytes) and len(value) < (2 ** 31)
 
 
 class DataTypeNodespan(DataType):
+    """Nodespan field type, sequence of nodes"""
+
     def __init__(self, typename: DataTypeEnum, **kwargs):
         super().__init__(typename, **kwargs)
 
-    def is_valid(self, value)->bool:
+    def is_valid(self, value) -> bool:
         return isinstance(value, NodeSpan) and \
                value.left.collection is not None and \
                value.right.collection is not None and \
@@ -1007,36 +1032,42 @@ class DataTypeNodespan(DataType):
 
 
 class DataTypeTextspan(DataType):
+    """Textspan field type, text sequence"""
+
     def __init__(self, typename: DataTypeEnum, **kwargs):
         super().__init__(typename, **kwargs)
 
-    def is_valid(self, value)->bool:
+    def is_valid(self, value) -> bool:
         return isinstance(value, TextSpan) and \
                value.text.name == self.options["context"]
 
 
 class DataTypeNoderef(DataType):
+    """Node reference field type in same or other layer"""
+
     def __init__(self, typename: DataTypeEnum, **kwargs):
         super().__init__(typename, **kwargs)
 
-    def is_valid(self, value)->bool:
+    def is_valid(self, value) -> bool:
         return isinstance(value, Node) and \
                value.collection is not None and \
                value.collection.name == self.options["layer"]
 
 
 class DataTypeNoderefList(DataType):
+    """Multi node reference field type in same or other layer"""
+
     def __init__(self, typename: DataTypeEnum, **kwargs):
         super().__init__(typename, **kwargs)
 
-    def is_valid(self, value)->bool:
+    def is_valid(self, value) -> bool:
         target_layer = self.options["layer"]
         return (isinstance(value, list) or isinstance(value, NodeCollection)) and \
                all(map(lambda n: n.collection is not None and n.collection.name == target_layer, value))
 
 
 class DataTypes:
-    """Common datatypes and factory methods for parametrical types"""
+    """Layer field type factory"""
     _float64 = DataTypeFloat(DataTypeEnum.F64, default=0)
     _float64_raw = DataTypeFloat(DataTypeEnum.F64)
     _int32 = DataTypeInt32(DataTypeEnum.I32, default=0)
@@ -1143,7 +1174,7 @@ class DataTypes:
         return isinstance(o, expected) if expected is not None else None
 
     @staticmethod
-    def typeof(o, comparetype: "DataType"=None) -> DataType:
+    def typeof(o, comparetype: "DataType" = None) -> DataType:
         if isinstance(o, str):
             return DataTypes.string()
         elif isinstance(o, int):
@@ -1219,6 +1250,7 @@ class NodeLayerSchema:
 
 class NodeCollectionQuery(NodeCollection):
     """Represents a query to document data"""
+
     def __init__(self, collection: "NodeCollection", predicate: Callable[["Node"], bool]):
         NodeCollection.__init__(self, fieldtypes=collection.fieldtypes)
         self.collection = collection
@@ -1252,7 +1284,11 @@ class NodeCollectionQuery(NodeCollection):
 
 
 class NodeLayerCollection(NodeCollection):
-    """Node collection, internally a list with gaps which will compact when 25% of the list is empty."""
+    """Node collection, internally a list with gaps which will compact when 25% of the list is empty.
+
+    .. automethod:: __getitem__
+    """
+
     def __init__(self, schema: "NodeLayerSchema"):
         super().__init__(schema.fields)
         self.nodetype = DataTypes.noderef(schema.name)
@@ -1263,12 +1299,12 @@ class NodeLayerCollection(NodeCollection):
         self._update_default_values()
 
     @property
-    def schema(self)->"NodeLayerSchema":
+    def schema(self) -> "NodeLayerSchema":
         """Get layer schema"""
         return self._schema
 
     @property
-    def name(self)->str:
+    def name(self) -> str:
         """Name of layer"""
         return self.schema.name
 
@@ -1299,7 +1335,7 @@ class NodeLayerCollection(NodeCollection):
                 for n in self:
                     n[name] = defaultvalue
 
-    def remove_field(self, name: str, leave_data=False)->bool:
+    def remove_field(self, name: str, leave_data=False) -> bool:
         """
         Remove existing field
 
@@ -1320,7 +1356,7 @@ class NodeLayerCollection(NodeCollection):
         self._update_default_values()
         return True
 
-    def unsafe_initialize(self, nodes: List[Node])->"NodeLayerCollection":
+    def unsafe_initialize(self, nodes: List[Node]) -> "NodeLayerCollection":
         """
         Directly replaces all nodes with the provided list, no checks for performance.
 
@@ -1334,7 +1370,7 @@ class NodeLayerCollection(NodeCollection):
         self._nodes = nodes
         return self
 
-    def validate(self, node: "Node")->bool:
+    def validate(self, node: "Node") -> bool:
         """Validate node against schema, will throw SchemaTypeError if not valid."""
         for field, fieldtype in self.schema.fields.items():
             if field in node:
@@ -1375,10 +1411,12 @@ class NodeLayerCollection(NodeCollection):
                             % (fieldtype.options["layer"], field, self.name, repr(node))
                     elif fieldtype.typename == DataTypeEnum.NODEREF_MANY:
                         assert isinstance(fieldvalue, list), "Not a node list: " \
-                                "field '%s' in layer '%s' for node %s" % (field, self.name, repr(node))
+                                                             "field '%s' in layer '%s' for node %s" % (
+                                                             field, self.name, repr(node))
                         for n in fieldvalue:
                             assert isinstance(n, Node), "Not a node: " \
-                                "field '%s' in layer '%s' for node %s" % (field, self.name, repr(node))
+                                                        "field '%s' in layer '%s' for node %s" % (
+                                                        field, self.name, repr(node))
                             assert n.collection is not None, \
                                 "Node is removed: " \
                                 "field '%s' in layer '%s' for node %s" % (field, self.name, repr(node))
@@ -1397,8 +1435,8 @@ class NodeLayerCollection(NodeCollection):
                             (fieldtype.options["context"], fieldvalue.text.name, field, self.name, repr(node))
                     else:
                         assert False, \
-                        "Invalid value in field %s, typeof(%s) does not match %s. Ref: %s" % \
-                        (field, repr(node[field]), repr(fieldtype), repr(node))
+                            "Invalid value in field %s, typeof(%s) does not match %s. Ref: %s" % \
+                            (field, repr(node[field]), repr(fieldtype), repr(node))
 
                     return False
 
@@ -1545,7 +1583,7 @@ class NodeLayerCollection(NodeCollection):
                 raise ValueError(
                     "Unsupported object was requested to be removed from this collection: %s " % (repr(node)))
 
-        if 0.75*len(self._nodes) > self.num and len(self._nodes) > 16:
+        if 0.75 * len(self._nodes) > self.num and len(self._nodes) > 16:
             self.compact()
 
     def retain(self, nodes: Iterable["Node"]):
@@ -1579,27 +1617,27 @@ class NodeLayerCollection(NodeCollection):
         # Compact list
         del self._nodes[k:]
 
-    def left(self, n: "Node")->Optional["Node"]:
+    def left(self, n: "Node") -> Optional["Node"]:
         """:return: node to the left or lower index than given n or None if none available."""
         assert n.collection is self, "Node is not in this collection"
 
-        for i in range(n.i-1, -1, -1):
+        for i in range(n.i - 1, -1, -1):
             if self._nodes[i] is not None:
                 return self._nodes[i]
 
         return None
 
-    def right(self, n: "Node")->Optional["Node"]:
+    def right(self, n: "Node") -> Optional["Node"]:
         """:return: node to the right or larger index than given n or None if none available."""
         assert n.collection is self, "Node is not in this collection"
 
-        for i in range(n.i+1, len(self._nodes)):
+        for i in range(n.i + 1, len(self._nodes)):
             if self._nodes[i] is not None:
                 return self._nodes[i]
 
         return None
 
-    def iter_nodespan(self, left_most: "Node", right_most: "Node")->Iterator["Node"]:
+    def iter_nodespan(self, left_most: "Node", right_most: "Node") -> Iterator["Node"]:
         """
         Iterator for node in given span
 
@@ -1612,9 +1650,10 @@ class NodeLayerCollection(NodeCollection):
         assert left_most.collection == right_most.collection and right_most.collection is self, \
             "Collection did not match"
 
-        return filter(None.__ne__, map(self._nodes.__getitem__, range(left_most.i, right_most.i+1)))
+        return filter(None.__ne__, map(self._nodes.__getitem__, range(left_most.i, right_most.i + 1)))
 
-    def __iter__(self)->Iterator[Node]:
+    def __iter__(self) -> Iterator[Node]:
+        """Get iterator for all nodes in this layer"""
         if self.num == len(self._nodes):
             return iter(self._nodes)
         else:
@@ -1633,6 +1672,20 @@ class NodeLayerCollection(NodeCollection):
         return self.num
 
     def __getitem__(self, item):
+        """Get nodes
+
+        :example:
+        >>> doc = ... # type: docria.model.Document
+        >>> token_layer = doc["token"]
+        >>>
+        >>> # Get sequence of nodes using node ids (tokens)
+        >>> token_layer[0:10]  # type: NodeList
+        >>>
+        >>> # Find all tokens with a particular field value
+        >>> tokens = token_layer[token_layer["pos"] == "NN"]
+        >>>
+        >>> token_layer["pos"]  # type: NodeFieldCollection
+        """
         if isinstance(item, int):
             return self._nodes[item]
         elif isinstance(item, Node):
@@ -1655,9 +1708,9 @@ class NodeLayerCollection(NodeCollection):
         return next(filter(None.__ne__, self._nodes), None)
 
     def last(self):
-        return next(filter(None.__ne__, map(self._nodes.__getitem__, range(len(self._nodes)-1, -1, -1))), None)
+        return next(filter(None.__ne__, map(self._nodes.__getitem__, range(len(self._nodes) - 1, -1, -1))), None)
 
-    def to_pandas(self, fields: List[str]=None, materialize_spans=False, include_ref_field=True):
+    def to_pandas(self, fields: List[str] = None, materialize_spans=False, include_ref_field=True):
         """
         Convert this layer to a pandas Dataframe
 
@@ -1703,6 +1756,7 @@ class Document:
     .. automethod:: __delitem__
     .. automethod:: __contains__
     """
+
     def __init__(self, **kwargs):
         """
         Construct new document
@@ -1714,27 +1768,27 @@ class Document:
         self.props = dict(kwargs)  # type: Dict[str, Any]
 
     @property
-    def text(self)->Dict[str, Text]:
+    def text(self) -> Dict[str, Text]:
         """Text"""
         return self._texts
 
     @property
-    def texts(self)->Dict[str, Text]:
+    def texts(self) -> Dict[str, Text]:
         """Alias for :meth:`~docria.Document.text`"""
         return self._texts
 
     @property
-    def layer(self)->Dict[str, NodeLayerCollection]:
+    def layer(self) -> Dict[str, NodeLayerCollection]:
         """Layer dict"""
         return self._layers
 
     @property
-    def layers(self)->Dict[str, NodeLayerCollection]:
+    def layers(self) -> Dict[str, NodeLayerCollection]:
         """Alias for :meth:`~docria.Document.layer`"""
         return self._layers
 
     @property
-    def maintext(self)->Text:
+    def maintext(self) -> Text:
         return self._texts["main"]
 
     @maintext.setter
@@ -1780,7 +1834,7 @@ class Document:
         self.layers[typedef.name] = typecol
         return typecol
 
-    def remove_layer(self, name, fieldcascade=False)->bool:
+    def remove_layer(self, name, fieldcascade=False) -> bool:
         """
         Remove layer from document if it exists.
 
@@ -1807,7 +1861,7 @@ class Document:
             )
 
             raise DataValidationError("Attempting to remove layer %s, but is referenced from layer(s)+field(s): %s"
-                                        % (name, layer_field_names))
+                                      % (name, layer_field_names))
 
         del self.layers[name]
 
@@ -1880,7 +1934,7 @@ class Document:
     def __contains__(self, item):
         return item in self._layers
 
-    def compile(self, extra_fields_ok=False, type_validation=True, **kwargs)->\
+    def compile(self, extra_fields_ok=False, type_validation=True, **kwargs) -> \
             Dict[str, Tuple[Dict[int, int], List[int]]]:
         """Compile the document, validates and assigns compacted ids to nodes (internal use)
 

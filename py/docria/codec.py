@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright 2018 Marcus Klang (marcus.klang@cs.lth.se)
+# Copyright 2021 Marcus Klang (marcus.klang@cs.lth.se)
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -348,17 +348,42 @@ class JsonCodec:
 
 
 class MsgpackDocument:
-    """MessagePack Document, allows partial decoding"""
-    def __init__(self, rawdata, ref=None):
+    """MessagePack Document, allows partial decoding
+
+    :Example:
+    >>> from docria.model import Document, DataTypes as T, Node
+    >>> from docria.codec import MsgpackDocument
+    >>>
+    >>> doc = Document()
+    >>> tokens = doc.add_layer("token", pos=T.string)
+    >>> node = Node(pos="NN")
+    >>> tokens.add_many([ node ])
+    >>>
+    >>> # Convert document to msgpack encoded binary data
+    >>> msgdoc = MsgpackDocument(doc)
+    >>> bytes_data = msgdoc.binary()  # type: bytes
+    >>>
+    >>> # Convert from msgpack encoded binary data to document
+    >>> newdoc = MsgpackDocument(bytes_data)
+    >>> doc = newdoc.document()
+    """
+
+    def __init__(self, data_or_document, ref=None):
+        """
+        Create a MsgpackDocument
+
+        :param data_or_document: Raw data (bytes, readable) or a Document instance.
+        :param ref: Used internally to add information about where this document came from.
+        """
         self.ref = ref
-        if isinstance(rawdata, bytes):
-            self.rawdata = BytesIO(rawdata)
-        elif isinstance(rawdata, IOBase):
-            self.rawdata = rawdata
-        elif isinstance(rawdata, Document):
-            self.rawdata = BytesIO(MsgpackCodec.encode(rawdata))
+        if isinstance(data_or_document, bytes):
+            self.rawdata = BytesIO(data_or_document)
+        elif isinstance(data_or_document, IOBase):
+            self.rawdata = data_or_document
+        elif isinstance(data_or_document, Document):
+            self.rawdata = BytesIO(MsgpackCodec.encode(data_or_document))
         else:
-            raise ValueError(f"Unsupported type for MsgpackDocument: {type(rawdata)}")
+            raise ValueError(f"Unsupported type for MsgpackDocument: {type(data_or_document)}")
 
         if self.rawdata.read(4) != b"DM_1":
             raise ValueError("Magic bytes is not DM_1")
@@ -453,10 +478,10 @@ class MsgpackDocument:
         doc.props = self.properties()
 
         # -- Parse schema
-        types, schema = self.schema() #MsgpackCodec.decode_schema(unpacker)
+        types, schema = self.schema()
 
         # -- Parse texts
-        texts = self.texts()# MsgpackCodec.decode_texts(unpacker)
+        texts = self.texts()
 
         text2offsets = MsgpackCodec.compute_text_offsets(doc, texts)
 
