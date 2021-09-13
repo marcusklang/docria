@@ -303,6 +303,11 @@ if not TYPE_CHECKING and _module_available("zstd"):
 class MsgpackDocumentReader:
     """Reader for the blocked MessagePack document file format"""
     def __init__(self, inputio: Union[RawIOBase,str]):
+        """
+        Construct a document reader
+
+        :param inputio: path to a docria file for reading or a file object (e.g. object returned by open)
+        """
         if isinstance(inputio, str):
             inputio = open(inputio, mode="rb")
 
@@ -436,17 +441,25 @@ class DocumentReader:
 
 class MsgpackDocumentWriter:
     """Writer for the blocked MessagePack document file format"""
-    def __init__(self, outputio: Union[RawIOBase, str], num_docs_per_block=128, codec=get_codec("zip"), **kwargs):
+    def __init__(self,
+                 outputio: Union[RawIOBase, str],
+                 num_docs_per_block=128,
+                 codec=get_codec("zip"),
+                 mode="xb",
+                 **kwargs):
         """
-        Primary constructor
+        Construct a document writer.
 
-        :param outputio: the underlying I/O device to write to.
+        If a string path is provided, mode xb is used, meaning it will fail if a file exist.
+
+        :param outputio: path to a new docria file to write to or an file object
         :param num_docs_per_block: the number of documents to cache before
                                    compressing the entire block and write to underlying storage.
         :param codec: the compression codec to use for blocks
+        :param mode: if outputio is a string path, the mode to use, by default xb
         """
         if isinstance(outputio, str):
-            outputio = open(outputio, mode="wb")
+            outputio = open(outputio, mode=mode)
 
         self.outputio = outputio
         self.packer = Packer(use_bin_type=True)
