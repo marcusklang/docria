@@ -24,7 +24,7 @@ import bz2
 import lzma
 from typing import Iterator
 import struct
-import importlib
+import importlib.util
 from docria.model import Document
 from docria.codec import MsgpackDocument
 import tarfile
