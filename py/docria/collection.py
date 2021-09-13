@@ -302,7 +302,10 @@ if not TYPE_CHECKING and _module_available("zstd"):
 
 class MsgpackDocumentReader:
     """Reader for the blocked MessagePack document file format"""
-    def __init__(self, inputio: RawIOBase):
+    def __init__(self, inputio: Union[RawIOBase,str]):
+        if isinstance(inputio, str):
+            inputio = open(inputio, mode="rb")
+
         self.inputio = inputio
         self.dataread = 4
         header = self.inputio.read(4)
@@ -433,7 +436,7 @@ class DocumentReader:
 
 class MsgpackDocumentWriter:
     """Writer for the blocked MessagePack document file format"""
-    def __init__(self, outputio: RawIOBase, num_docs_per_block=128, codec=get_codec("zip"), **kwargs):
+    def __init__(self, outputio: Union[RawIOBase, str], num_docs_per_block=128, codec=get_codec("zip"), **kwargs):
         """
         Primary constructor
 
@@ -442,6 +445,9 @@ class MsgpackDocumentWriter:
                                    compressing the entire block and write to underlying storage.
         :param codec: the compression codec to use for blocks
         """
+        if isinstance(outputio, str):
+            outputio = open(outputio, mode="wb")
+
         self.outputio = outputio
         self.packer = Packer(use_bin_type=True)
 
